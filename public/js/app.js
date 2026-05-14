@@ -1,493 +1,282 @@
-// SMC Trading App - Main Application
+// SMC Trading App - Client-side (Vercel compatible)
 (function () {
   'use strict';
 
-  // State
   let chart = null;
   let candleSeries = null;
-  let ws = null;
   let currentTimeframe = '15m';
-  let currentAnalysis = null;
-  let markers = [];
+  let candleData = {};
+  let htfAnalysis = {};
+  let binanceWs = null;
   let drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [] };
+  let markers = [];
+  let lastSignalTime = 0;
 
-  // Initialize
+  const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
+  const MAX_CANDLES = 500;
+
   function init() {
     createChart();
-    connectWebSocket();
     setupEventListeners();
+    loadAllData();
+    renderSimulator();
   }
 
-  // Create Lightweight Chart
   function createChart() {
     const container = document.getElementById('chartContainer');
-
     chart = LightweightCharts.createChart(container, {
-      width: container.clientWidth,
-      height: container.clientHeight,
-      layout: {
-        background: { type: 'solid', color: '#131722' },
-        textColor: '#d1d4dc',
-      },
-      grid: {
-        vertLines: { color: '#1e222d' },
-        horzLines: { color: '#1e222d' },
-      },
-      crosshair: {
-        mode: LightweightCharts.CrosshairMode.Normal,
-        vertLine: { color: '#4c525e', width: 1, style: 2 },
-        horzLine: { color: '#4c525e', width: 1, style: 2 },
-      },
-      rightPriceScale: {
-        borderColor: '#2a2e39',
-        scaleMargins: { top: 0.1, bottom: 0.1 },
-      },
-      timeScale: {
-        borderColor: '#2a2e39',
-        timeVisible: true,
-        secondsVisible: false,
-      },
+      width: container.clientWidth, height: container.clientHeight,
+      layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc' },
+      grid: { vertLines: { color: '#1e222d' }, horzLines: { color: '#1e222d' } },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4c525e', width: 1, style: 2 }, horzLine: { color: '#4c525e', width: 1, style: 2 } },
+      rightPriceScale: { borderColor: '#2a2e39', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false }
     });
-
-    candleSeries = chart.addCandlestickSeries({
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderUpColor: '#26a69a',
-      borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350',
-    });
-
-    const resizeObserver = new ResizeObserver(() => {
-      chart.applyOptions({
-        width: container.clientWidth,
-        height: container.clientHeight,
-      });
-    });
-    resizeObserver.observe(container);
+    candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderUpColor: '#26a69a', borderDownColor: '#ef5350', wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
+    new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })).observe(container);
   }
 
-  // WebSocket Connection
-  function connectWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${protocol}//${window.location.host}`);
+  // Load historical data from Binance REST API
+  async function loadAllData() {
+    for (const tf of TIMEFRAMES) {
+      try {
+        const resp = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=${MAX_CANDLES}`);
+        const data = await resp.json();
+        candleData[tf] = data.map(k => ({ time: Math.floor(k[0] / 1000), open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] }));
+      } catch (e) { candleData[tf] = []; }
+    }
 
-    ws.onopen = () => {
-      console.log('Connected to server');
-      subscribe(currentTimeframe);
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'init') {
-        handleInit(data);
-      } else if (data.type === 'update') {
-        handleUpdate(data);
-      } else if (data.type === 'history_update') {
-        handleHistoryUpdate(data);
-      } else if (data.type === 'simulator_update') {
-        handleSimulatorUpdate(data);
+    // HTF analysis
+    for (const tf of ['4h', '1d']) {
+      if (candleData[tf] && candleData[tf].length > 50) {
+        htfAnalysis[tf] = { structure: SMC.analyzeStructure(candleData[tf]) };
       }
+    }
+
+    // Display current timeframe
+    displayTimeframe(currentTimeframe);
+    connectBinanceWS();
+  }
+
+  function displayTimeframe(tf) {
+    const candles = candleData[tf];
+    if (!candles || candles.length === 0) return;
+    candleSeries.setData(candles);
+    chart.timeScale().fitContent();
+    updatePriceDisplay(candles[candles.length - 1]);
+    runAnalysis(tf);
+  }
+
+  function connectBinanceWS() {
+    if (binanceWs) binanceWs.close();
+
+    const streams = TIMEFRAMES.map(tf => `btcusdt@kline_${tf}`).join('/');
+    binanceWs = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
+
+    binanceWs.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      const k = msg.data.k;
+      const tf = k.i;
+      const candle = { time: Math.floor(k.t / 1000), open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
+
+      const candles = candleData[tf];
+      if (!candles) return;
+
+      if (candles.length > 0 && candles[candles.length - 1].time === candle.time) {
+        candles[candles.length - 1] = candle;
+      } else {
+        candles.push(candle);
+        if (candles.length > MAX_CANDLES) candles.shift();
+      }
+
+      // Update HTF analysis
+      if (tf === '4h' || tf === '1d') {
+        if (candles.length > 50) htfAnalysis[tf] = { structure: SMC.analyzeStructure(candles) };
+      }
+
+      // Update chart if viewing this timeframe
+      if (tf === currentTimeframe) {
+        candleSeries.update(candle);
+        updatePriceDisplay(candle);
+        runAnalysis(tf);
+      }
+
+      // Update simulator with current price
+      Simulator.updatePositions(candle.close);
+      renderSimulator();
     };
 
-    ws.onclose = () => {
-      console.log('Disconnected, reconnecting...');
-      setTimeout(connectWebSocket, 3000);
-    };
-
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-    };
+    binanceWs.onclose = () => setTimeout(connectBinanceWS, 3000);
   }
 
-  function subscribe(timeframe) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'subscribe', timeframe }));
-    }
-  }
+  function runAnalysis(tf) {
+    const candles = candleData[tf];
+    if (!candles || candles.length < 50) return;
 
-  // Handle initial data
-  function handleInit(data) {
-    const { candles, analysis } = data;
+    const structure = SMC.analyzeStructure(candles);
+    const obs = SMC.detectOrderBlocks(candles, structure);
+    const fvgs = SMC.detectFVG(candles);
+    const liquidity = SMC.detectLiquidity(candles, structure);
+    const pd = SMC.calculatePremiumDiscount(candles, structure);
+    const volume = SMC.analyzeVolume(candles);
+    const session = SMC.getCurrentSession();
 
-    if (candles && candles.length > 0) {
-      candleSeries.setData(candles);
-      chart.timeScale().fitContent();
-      const lastCandle = candles[candles.length - 1];
-      updatePriceDisplay(lastCandle);
-    }
+    // HTF trend
+    const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
+    const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
+    const htfTrend = t4h === t1d ? t4h : t4h;
 
-    if (analysis) {
-      currentAnalysis = analysis;
-      drawAnalysis(analysis);
-      updatePanel(analysis);
-    }
-  }
+    const signals = SMC.generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend);
 
-  // Handle real-time updates
-  function handleUpdate(data) {
-    const { candle, analysis } = data;
-
-    if (candle) {
-      candleSeries.update(candle);
-      updatePriceDisplay(candle);
+    // Open simulator positions for new signals
+    const now = Date.now();
+    if (signals.length > 0 && now - lastSignalTime > 30000) {
+      for (const s of signals) {
+        Simulator.openPosition({ ...s, timeframe: tf });
+      }
+      lastSignalTime = now;
+      renderSimulator();
     }
 
-    if (analysis) {
-      currentAnalysis = analysis;
-      drawAnalysis(analysis);
-      updatePanel(analysis);
-    }
+    // Draw on chart
+    drawAnalysis(structure, obs, fvgs, liquidity, pd, signals);
+
+    // Update panel
+    updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend);
   }
 
-  // Handle signal history updates
-  function handleHistoryUpdate(data) {
-    // History is now shown via simulator trades
-  }
-
-  // Handle simulator updates
-  function handleSimulatorUpdate(data) {
-    const { stats, openPositions, closedTrades } = data;
-    renderSimulatorStats(stats);
-    renderOpenPositions(openPositions);
-    renderClosedTrades(closedTrades);
-  }
-
-  // Draw SMC analysis on chart
-  function drawAnalysis(analysis) {
-    if (!analysis) return;
-
+  function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
     markers = [];
     clearDrawnObjects();
 
-    const { structure, obs, fvgs, liquidity, pd, signals } = analysis;
+    // BOS/CHoCH
+    for (const b of (structure.bos || []).slice(-8)) markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#2196f3', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
+    for (const c of (structure.choch || []).slice(-4)) markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ff9800', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
 
-    if (structure) drawStructure(structure);
-    if (obs && obs.length > 0) drawOrderBlocks(obs);
-    if (fvgs && fvgs.length > 0) drawFVGs(fvgs);
-    if (liquidity && liquidity.length > 0) drawLiquidity(liquidity);
-    if (pd) drawPremiumDiscount(pd);
-    if (signals && signals.length > 0) drawSignals(signals);
-
-    if (markers.length > 0) {
-      markers.sort((a, b) => a.time - b.time);
-      candleSeries.setMarkers(markers);
-    } else {
-      candleSeries.setMarkers([]);
+    // OBs
+    for (const ob of obs.slice(-5)) {
+      const color = ob.type === 'ob_bullish' ? '#26a69a' : '#ef5350';
+      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.top, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: ob.type === 'ob_bullish' ? 'OB↑' : 'OB↓' }));
+      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.bottom, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: '' }));
     }
+
+    // FVGs
+    for (const fvg of fvgs.slice(-5)) {
+      const color = fvg.type === 'fvg_bullish' ? 'rgba(171,71,188,0.6)' : 'rgba(255,152,0,0.6)';
+      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.top, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: fvg.type === 'fvg_bullish' ? 'FVG↑' : 'FVG↓' }));
+      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.bottom, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' }));
+    }
+
+    // Liquidity
+    for (const liq of liquidity.slice(-6)) {
+      drawnObjects.liquidity.push(candleSeries.createPriceLine({ price: liq.price, color: '#ffeb3b', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: liq.type.includes('high') ? 'LIQ$↑' : 'LIQ$↓' }));
+    }
+
+    // P/D
+    if (pd) {
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.equilibrium, color: '#787b86', lineWidth: 1, lineStyle: 4, axisLabelVisible: true, title: 'EQ' }));
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeHigh, color: 'rgba(239,83,80,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Premium' }));
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeLow, color: 'rgba(38,166,154,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Discount' }));
+    }
+
+    // Signals
+    for (const s of signals.slice(-3)) {
+      markers.push({ time: s.time, position: s.type === 'long' ? 'belowBar' : 'aboveBar', color: s.type === 'long' ? '#26a69a' : '#ef5350', shape: s.type === 'long' ? 'arrowUp' : 'arrowDown', text: s.type === 'long' ? 'LONG' : 'SHORT' });
+      if (s.sl) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.sl, color: '#ef5350', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'SL' }));
+      if (s.tp) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.tp, color: '#26a69a', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'TP' }));
+    }
+
+    markers.sort((a, b) => a.time - b.time);
+    candleSeries.setMarkers(markers.length > 0 ? markers : []);
   }
 
   function clearDrawnObjects() {
-    for (const lines of Object.values(drawnObjects)) {
-      for (const line of lines) {
-        try { candleSeries.removePriceLine(line); } catch (e) { /* ignore */ }
-      }
-    }
+    for (const lines of Object.values(drawnObjects)) { for (const l of lines) { try { candleSeries.removePriceLine(l); } catch (e) {} } }
     drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [] };
   }
 
-  function drawStructure(structure) {
-    const { bos, choch } = structure;
-
-    for (const b of (bos || []).slice(-8)) {
-      markers.push({
-        time: b.time,
-        position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar',
-        color: '#2196f3',
-        shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown',
-        text: 'BOS',
-      });
-    }
-
-    for (const c of (choch || []).slice(-4)) {
-      markers.push({
-        time: c.time,
-        position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar',
-        color: '#ff9800',
-        shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown',
-        text: 'CHoCH',
-      });
-    }
-  }
-
-  function drawOrderBlocks(obs) {
-    for (const ob of obs.slice(-5)) {
-      const isBullish = ob.type === 'ob_bullish';
-      const color = isBullish ? '#26a69a' : '#ef5350';
-
-      const topLine = candleSeries.createPriceLine({
-        price: ob.top,
-        color: color,
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: false,
-        title: isBullish ? 'OB↑' : 'OB↓',
-      });
-      drawnObjects.obs.push(topLine);
-
-      const bottomLine = candleSeries.createPriceLine({
-        price: ob.bottom,
-        color: color,
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: false,
-        title: '',
-      });
-      drawnObjects.obs.push(bottomLine);
-    }
-  }
-
-  function drawFVGs(fvgs) {
-    for (const fvg of fvgs.slice(-5)) {
-      const isBullish = fvg.type === 'fvg_bullish';
-      const color = isBullish ? 'rgba(171, 71, 188, 0.6)' : 'rgba(255, 152, 0, 0.6)';
-
-      const topLine = candleSeries.createPriceLine({
-        price: fvg.top,
-        color: color,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: false,
-        title: isBullish ? 'FVG↑' : 'FVG↓',
-      });
-      drawnObjects.fvgs.push(topLine);
-
-      const bottomLine = candleSeries.createPriceLine({
-        price: fvg.bottom,
-        color: color,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: false,
-        title: '',
-      });
-      drawnObjects.fvgs.push(bottomLine);
-    }
-  }
-
-  function drawLiquidity(liquidity) {
-    for (const liq of liquidity.slice(-6)) {
-      const isHigh = liq.type.includes('high');
-      const line = candleSeries.createPriceLine({
-        price: liq.price,
-        color: '#ffeb3b',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        axisLabelVisible: false,
-        title: isHigh ? 'LIQ$↑' : 'LIQ$↓',
-      });
-      drawnObjects.liquidity.push(line);
-    }
-  }
-
-  function drawPremiumDiscount(pd) {
-    if (!pd) return;
-
-    const eqLine = candleSeries.createPriceLine({
-      price: pd.equilibrium,
-      color: '#787b86',
-      lineWidth: 1,
-      lineStyle: LightweightCharts.LineStyle.LargeDashed,
-      axisLabelVisible: true,
-      title: 'EQ',
-    });
-    drawnObjects.pd.push(eqLine);
-
-    const highLine = candleSeries.createPriceLine({
-      price: pd.rangeHigh,
-      color: 'rgba(239, 83, 80, 0.35)',
-      lineWidth: 1,
-      lineStyle: LightweightCharts.LineStyle.Dotted,
-      axisLabelVisible: false,
-      title: 'Premium',
-    });
-    drawnObjects.pd.push(highLine);
-
-    const lowLine = candleSeries.createPriceLine({
-      price: pd.rangeLow,
-      color: 'rgba(38, 166, 154, 0.35)',
-      lineWidth: 1,
-      lineStyle: LightweightCharts.LineStyle.Dotted,
-      axisLabelVisible: false,
-      title: 'Discount',
-    });
-    drawnObjects.pd.push(lowLine);
-  }
-
-  function drawSignals(signals) {
-    for (const signal of signals.slice(-3)) {
-      markers.push({
-        time: signal.time,
-        position: signal.type === 'long' ? 'belowBar' : 'aboveBar',
-        color: signal.type === 'long' ? '#26a69a' : '#ef5350',
-        shape: signal.type === 'long' ? 'arrowUp' : 'arrowDown',
-        text: signal.type === 'long' ? 'LONG' : 'SHORT',
-      });
-
-      if (signal.sl) {
-        const slLine = candleSeries.createPriceLine({
-          price: signal.sl,
-          color: '#ef5350',
-          lineWidth: 1,
-          lineStyle: LightweightCharts.LineStyle.Dotted,
-          axisLabelVisible: true,
-          title: 'SL',
-        });
-        drawnObjects.obs.push(slLine);
-      }
-
-      if (signal.tp) {
-        const tpLine = candleSeries.createPriceLine({
-          price: signal.tp,
-          color: '#26a69a',
-          lineWidth: 1,
-          lineStyle: LightweightCharts.LineStyle.Dotted,
-          axisLabelVisible: true,
-          title: 'TP',
-        });
-        drawnObjects.obs.push(tpLine);
-      }
-    }
-  }
-
-  // Update panel sidebar
-  function updatePanel(analysis) {
-    if (!analysis) return;
-
-    const { structure, obs, fvgs, liquidity, pd, signals, session, volume, mtfSummary } = analysis;
-
-    if (mtfSummary) updateMTFGrid(mtfSummary);
-    if (volume) updateVolumePanel(volume);
-    if (session) updateSessionInfo(session);
-
-    if (pd) {
-      const pdZone = document.getElementById('pdZone');
-      pdZone.textContent = pd.position === 'premium' ? '⬆ Premium' :
-                           pd.position === 'discount' ? '⬇ Descuento' : '↔ Equilibrio';
-      pdZone.style.color = pd.position === 'premium' ? '#ef5350' :
-                           pd.position === 'discount' ? '#26a69a' : '#787b86';
-    }
-
-    document.getElementById('obCount').textContent = obs ? obs.length : 0;
-    document.getElementById('fvgCount').textContent = fvgs ? fvgs.length : 0;
-    document.getElementById('liqCount').textContent = liquidity ? liquidity.length : 0;
-    document.getElementById('bosCount').textContent = structure ?
-      (structure.bos || []).length + (structure.choch || []).length : 0;
-
-    updateSignalsList(signals, session);
-  }
-
-  function updateMTFGrid(mtfSummary) {
-    for (const [tf, data] of Object.entries(mtfSummary)) {
+  function updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend) {
+    // MTF
+    for (const tf of TIMEFRAMES) {
       const el = document.getElementById(`mtf-${tf}`);
-      if (el) {
-        const trend = data.trend;
-        el.textContent = trend === 'bullish' ? '↑' : trend === 'bearish' ? '↓' : '→';
-        el.className = `mtf-trend ${trend}`;
-
+      if (el && candleData[tf] && candleData[tf].length > 50) {
+        const s = SMC.analyzeStructure(candleData[tf]);
+        el.textContent = s.trend === 'bullish' ? '↑' : s.trend === 'bearish' ? '↓' : '→';
+        el.className = `mtf-trend ${s.trend}`;
         const item = el.closest('.mtf-item');
-        if (item) {
-          item.classList.toggle('current', tf === currentTimeframe);
-        }
+        if (item) item.classList.toggle('current', tf === currentTimeframe);
       }
     }
-  }
 
-  function updateVolumePanel(volume) {
-    const relEl = document.getElementById('volRelative');
-    relEl.textContent = `${volume.relativeVolume}x (${volume.label})`;
-    relEl.className = `vol-value ${volume.isHighVolume ? 'high' : 'low'}`;
-
-    const trendEl = document.getElementById('volTrend');
-    const trendLabels = { increasing: '↑ Creciente', decreasing: '↓ Decreciente', stable: '→ Estable' };
-    trendEl.textContent = trendLabels[volume.volumeTrend] || '→ Estable';
-
-    if (volume.pressure) {
+    // Volume
+    if (volume) {
+      const relEl = document.getElementById('volRelative');
+      relEl.textContent = `${volume.relativeVolume}x (${volume.label})`;
+      relEl.className = `vol-value ${volume.isHighVolume ? 'high' : 'low'}`;
+      document.getElementById('volTrend').textContent = volume.volumeTrend === 'increasing' ? '↑ Creciente' : volume.volumeTrend === 'decreasing' ? '↓ Decreciente' : '→ Estable';
       document.getElementById('pressureBuy').style.width = `${volume.pressure.buyPercent}%`;
       document.getElementById('pressureSell').style.width = `${volume.pressure.sellPercent}%`;
       document.getElementById('buyPercent').textContent = `${volume.pressure.buyPercent}%`;
       document.getElementById('sellPercent').textContent = `${volume.pressure.sellPercent}%`;
     }
-  }
 
-  function updateSessionInfo(session) {
-    const dot = document.getElementById('sessionDot');
-    const label = document.getElementById('sessionLabel');
-    const kzBadge = document.getElementById('killzoneBadge');
-    const kzLabel = document.getElementById('killzoneLabel');
-
-    label.textContent = session.sessionLabel;
-    dot.className = `session-dot ${session.isKillzoneActive ? 'active' : ''}`;
-
-    kzLabel.textContent = session.isKillzoneActive ? session.killzoneLabel : 'Sin Killzone';
-    kzBadge.className = `killzone-badge ${session.isKillzoneActive ? 'active' : ''}`;
-
-    document.getElementById('ctxSession').textContent = session.sessionLabel;
-    document.getElementById('ctxKillzone').textContent = session.isKillzoneActive ? session.killzoneLabel : 'Ninguna';
-    document.getElementById('ctxKillzone').style.color = session.isKillzoneActive ? '#ff9800' : '#787b86';
-  }
-
-  function updateSignalsList(signals, session) {
-    const container = document.getElementById('signalsList');
-
-    if (!signals || signals.length === 0) {
-      container.innerHTML = '<div class="no-signals">Sin señales activas</div>';
-      return;
+    // Session
+    if (session) {
+      document.getElementById('sessionLabel').textContent = session.sessionLabel;
+      document.getElementById('sessionDot').className = `session-dot ${session.isKillzoneActive ? 'active' : ''}`;
+      document.getElementById('killzoneLabel').textContent = session.isKillzoneActive ? session.killzoneLabel : 'Sin Killzone';
+      document.getElementById('killzoneBadge').className = `killzone-badge ${session.isKillzoneActive ? 'active' : ''}`;
+      document.getElementById('ctxSession').textContent = session.sessionLabel;
+      document.getElementById('ctxKillzone').textContent = session.isKillzoneActive ? session.killzoneLabel : 'Ninguna';
+      document.getElementById('ctxKillzone').style.color = session.isKillzoneActive ? '#ff9800' : '#787b86';
     }
 
-    container.innerHTML = signals.map(signal => `
-      <div class="signal-card ${signal.type}">
-        <div class="signal-header">
-          <span class="signal-type ${signal.type}">${signal.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span>
-          <span class="signal-confidence ${signal.confidence}">${signal.confidence}</span>
-        </div>
-        <div class="signal-details">
-          <div class="signal-detail">
-            <span class="signal-detail-label">Entrada</span>
-            <span class="signal-detail-value">${formatPrice(signal.entry)}</span>
+    // P/D
+    if (pd) {
+      const el = document.getElementById('pdZone');
+      el.textContent = pd.position === 'premium' ? '⬆ Premium' : pd.position === 'discount' ? '⬇ Descuento' : '↔ Equilibrio';
+      el.style.color = pd.position === 'premium' ? '#ef5350' : pd.position === 'discount' ? '#26a69a' : '#787b86';
+    }
+
+    // Counts
+    document.getElementById('obCount').textContent = obs.length;
+    document.getElementById('fvgCount').textContent = fvgs.length;
+    document.getElementById('liqCount').textContent = liquidity.length;
+    document.getElementById('bosCount').textContent = (structure.bos || []).length + (structure.choch || []).length;
+
+    // Signals
+    const sc = document.getElementById('signalsList');
+    if (!signals || signals.length === 0) { sc.innerHTML = '<div class="no-signals">Sin señales activas</div>'; }
+    else {
+      sc.innerHTML = signals.map(s => `
+        <div class="signal-card ${s.type}">
+          <div class="signal-header"><span class="signal-type ${s.type}">${s.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span><span class="signal-confidence ${s.confidence}">${s.confidence}</span></div>
+          <div class="signal-details">
+            <div class="signal-detail"><span class="signal-detail-label">Entrada</span><span class="signal-detail-value">${fp(s.entry)}</span></div>
+            <div class="signal-detail"><span class="signal-detail-label">SL</span><span class="signal-detail-value" style="color:#ef5350">${fp(s.sl)}</span></div>
+            <div class="signal-detail"><span class="signal-detail-label">TP</span><span class="signal-detail-value" style="color:#26a69a">${fp(s.tp)}</span></div>
           </div>
-          <div class="signal-detail">
-            <span class="signal-detail-label">SL</span>
-            <span class="signal-detail-value" style="color:#ef5350">${formatPrice(signal.sl)}</span>
+          <div class="signal-details">
+            <div class="signal-detail"><span class="signal-detail-label">R:R</span><span class="signal-detail-value">1:${s.rr}</span></div>
+            <div class="signal-detail"><span class="signal-detail-label">Tamaño</span><span class="signal-detail-value">$600</span></div>
+            <div class="signal-detail"><span class="signal-detail-label">Conf.</span><span class="signal-detail-value">${s.confidence}</span></div>
           </div>
-          <div class="signal-detail">
-            <span class="signal-detail-label">TP</span>
-            <span class="signal-detail-value" style="color:#26a69a">${formatPrice(signal.tp)}</span>
-          </div>
-        </div>
-        <div class="signal-details">
-          <div class="signal-detail">
-            <span class="signal-detail-label">R:R</span>
-            <span class="signal-detail-value">1:${signal.rr}</span>
-          </div>
-          <div class="signal-detail">
-            <span class="signal-detail-label">TF</span>
-            <span class="signal-detail-value">${signal.timeframe || currentTimeframe}</span>
-          </div>
-          <div class="signal-detail">
-            <span class="signal-detail-label">Tamaño</span>
-            <span class="signal-detail-value">$600</span>
-          </div>
-        </div>
-        ${session && session.isKillzoneActive ? `<span class="signal-killzone-tag">⚡ ${session.killzoneLabel}</span>` : ''}
-        <div class="signal-reason">${signal.reason}</div>
-      </div>
-    `).join('');
+          <div class="signal-reason">${s.reason}</div>
+        </div>`).join('');
+    }
   }
 
-  // Simulator rendering
-  function renderSimulatorStats(stats) {
-    if (!stats) return;
+  function renderSimulator() {
+    const stats = Simulator.getStats();
+    const bal = parseFloat(stats.balance);
+    const balEl = document.getElementById('simBalance');
+    balEl.textContent = `$${stats.balance}`;
+    balEl.className = `sim-balance-value ${bal > 0 ? 'positive' : bal < 0 ? 'negative' : 'neutral'}`;
 
-    const balanceEl = document.getElementById('simBalance');
-    const balance = parseFloat(stats.balance);
-    balanceEl.textContent = `$${stats.balance}`;
-    balanceEl.className = `sim-balance-value ${balance > 0 ? 'positive' : balance < 0 ? 'negative' : 'neutral'}`;
-
+    const roi = stats.totalTrades > 0 ? ((bal / (stats.totalTrades * 20)) * 100).toFixed(2) : '0.00';
     const roiEl = document.getElementById('simRoi');
-    const roi = parseFloat(stats.roi);
-    roiEl.textContent = `${stats.roi}%`;
-    roiEl.className = `sim-balance-value ${roi > 0 ? 'positive' : roi < 0 ? 'negative' : 'neutral'}`;
+    roiEl.textContent = `${roi}%`;
+    roiEl.className = `sim-balance-value ${parseFloat(roi) > 0 ? 'positive' : parseFloat(roi) < 0 ? 'negative' : 'neutral'}`;
 
     document.getElementById('simWinRate').textContent = stats.winRate;
     document.getElementById('simWins').textContent = stats.wins;
@@ -497,150 +286,74 @@
     document.getElementById('simAvgLoss').textContent = `$${stats.avgLoss}`;
     document.getElementById('simMaxDD').textContent = `$${stats.maxDrawdown}`;
     document.getElementById('simMaxStreak').textContent = stats.maxConsecLosses;
-  }
 
-  function renderOpenPositions(positions) {
-    const container = document.getElementById('positionsList');
-
-    if (!positions || positions.length === 0) {
-      container.innerHTML = '<div class="no-signals">Sin posiciones abiertas</div>';
-      return;
-    }
-
-    container.innerHTML = positions.map(pos => {
-      const pnl = pos.currentPnl || 0;
-      const pnlClass = pnl >= 0 ? 'positive' : 'negative';
-
-      return `
-        <div class="position-card ${pos.type}">
-          <div class="position-header">
-            <span class="position-type ${pos.type}">${pos.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span>
-            <span class="position-pnl ${pnlClass}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${pos.currentPnlPercent}%)</span>
-          </div>
+    // Open positions
+    const positions = Simulator.getOpenPositions();
+    const pc = document.getElementById('positionsList');
+    if (positions.length === 0) { pc.innerHTML = '<div class="no-signals">Sin posiciones abiertas</div>'; }
+    else {
+      pc.innerHTML = positions.map(p => {
+        const pnl = p.currentPnl || 0;
+        return `<div class="position-card ${p.type}">
+          <div class="position-header"><span class="position-type ${p.type}">${p.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span><span class="position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${p.currentPnlPercent}%)</span></div>
           <div class="position-details">
-            <div class="position-detail">
-              <span class="position-detail-label">Entrada</span>
-              <span class="position-detail-value">${formatPrice(pos.entry)}</span>
-            </div>
-            <div class="position-detail">
-              <span class="position-detail-label">SL</span>
-              <span class="position-detail-value" style="color:#ef5350">${formatPrice(pos.sl)}</span>
-            </div>
-            <div class="position-detail">
-              <span class="position-detail-label">TP</span>
-              <span class="position-detail-value" style="color:#26a69a">${formatPrice(pos.tp)}</span>
-            </div>
-            <div class="position-detail">
-              <span class="position-detail-label">Tamaño</span>
-              <span class="position-detail-value">$${pos.positionSize}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  function renderClosedTrades(trades) {
-    const container = document.getElementById('tradesHistory');
-
-    if (!trades || trades.length === 0) {
-      container.innerHTML = '<div class="no-signals">Sin trades cerrados</div>';
-      return;
+            <div class="position-detail"><span class="position-detail-label">Entrada</span><span class="position-detail-value">${fp(p.entry)}</span></div>
+            <div class="position-detail"><span class="position-detail-label">SL</span><span class="position-detail-value" style="color:#ef5350">${fp(p.sl)}</span></div>
+            <div class="position-detail"><span class="position-detail-label">TP</span><span class="position-detail-value" style="color:#26a69a">${fp(p.tp)}</span></div>
+            <div class="position-detail"><span class="position-detail-label">Tamaño</span><span class="position-detail-value">$${p.positionSize}</span></div>
+          </div></div>`;
+      }).join('');
     }
 
-    container.innerHTML = trades.slice(0, 20).map(trade => {
-      const date = new Date(trade.closedAt);
-      const timeStr = date.toLocaleString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      const pnl = parseFloat(trade.netPnl);
-      const pnlClass = pnl >= 0 ? 'positive' : 'negative';
-      const resultEmoji = trade.result === 'win' ? '✅' : '❌';
-      const reasonLabel = trade.closeReason === 'tp' ? 'TP Hit' :
-                          trade.closeReason === 'sl' ? 'SL Hit' : 'Liquidado';
-
-      return `
-        <div class="history-item ${trade.type} ${trade.result}">
-          <div class="history-item-header">
-            <span class="history-type ${trade.type}">${resultEmoji} ${trade.type === 'long' ? 'LONG' : 'SHORT'}</span>
-            <span class="history-time">${timeStr}</span>
-            <span class="history-pnl ${pnlClass}">${pnl >= 0 ? '+' : ''}$${trade.netPnl}</span>
-          </div>
+    // Closed trades
+    const trades = Simulator.getClosedTrades(20);
+    const tc = document.getElementById('tradesHistory');
+    if (trades.length === 0) { tc.innerHTML = '<div class="no-signals">Sin trades cerrados</div>'; }
+    else {
+      tc.innerHTML = trades.map(t => {
+        const pnl = parseFloat(t.netPnl);
+        const time = new Date(t.closedAt).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return `<div class="history-item ${t.type} ${t.result}">
+          <div class="history-item-header"><span class="history-type ${t.type}">${t.result === 'win' ? '✅' : '❌'} ${t.type.toUpperCase()}</span><span class="history-time">${time}</span><span class="history-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}$${t.netPnl}</span></div>
           <div class="history-risk">
-            <div class="history-risk-item">
-              <span class="history-risk-label">Entrada</span>
-              <span class="history-risk-value">${formatPrice(trade.entry)}</span>
-            </div>
-            <div class="history-risk-item">
-              <span class="history-risk-label">Cierre</span>
-              <span class="history-risk-value">${formatPrice(trade.closePrice)}</span>
-            </div>
-            <div class="history-risk-item">
-              <span class="history-risk-label">Razón</span>
-              <span class="history-risk-value">${reasonLabel}</span>
-            </div>
-            <div class="history-risk-item">
-              <span class="history-risk-label">R:R</span>
-              <span class="history-risk-value">1:${trade.rr}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
+            <div class="history-risk-item"><span class="history-risk-label">Entrada</span><span class="history-risk-value">${fp(t.entry)}</span></div>
+            <div class="history-risk-item"><span class="history-risk-label">Cierre</span><span class="history-risk-value">${fp(t.closePrice)}</span></div>
+            <div class="history-risk-item"><span class="history-risk-label">Razón</span><span class="history-risk-value">${t.closeReason === 'tp' ? 'TP' : t.closeReason === 'sl' ? 'SL' : 'LIQ'}</span></div>
+            <div class="history-risk-item"><span class="history-risk-label">R:R</span><span class="history-risk-value">1:${t.rr}</span></div>
+          </div></div>`;
+      }).join('');
+    }
   }
 
-  // Update price display
   function updatePriceDisplay(candle) {
-    const priceEl = document.getElementById('currentPrice');
-    const changeEl = document.getElementById('priceChange');
-
-    priceEl.textContent = formatPrice(candle.close);
-
+    document.getElementById('currentPrice').textContent = fp(candle.close);
     const change = ((candle.close - candle.open) / candle.open * 100).toFixed(2);
-    changeEl.textContent = `${change >= 0 ? '+' : ''}${change}%`;
-    changeEl.className = `price-change ${change >= 0 ? 'positive' : 'negative'}`;
+    const el = document.getElementById('priceChange');
+    el.textContent = `${change >= 0 ? '+' : ''}${change}%`;
+    el.className = `price-change ${change >= 0 ? 'positive' : 'negative'}`;
   }
 
-  // Event Listeners
   function setupEventListeners() {
-    const tfButtons = document.querySelectorAll('.timeframe-selector button');
-    tfButtons.forEach(btn => {
+    document.querySelectorAll('.timeframe-selector button').forEach(btn => {
       btn.addEventListener('click', () => {
-        tfButtons.forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.timeframe-selector button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         currentTimeframe = btn.dataset.tf;
         clearDrawnObjects();
         candleSeries.setMarkers([]);
-        subscribe(currentTimeframe);
+        displayTimeframe(currentTimeframe);
       });
     });
 
-    const panelToggle = document.getElementById('panelToggle');
-    const sidebar = document.getElementById('panelSidebar');
-    panelToggle.addEventListener('click', () => {
-      sidebar.classList.toggle('collapsed');
-      panelToggle.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
-      setTimeout(() => {
-        chart.applyOptions({
-          width: document.getElementById('chartContainer').clientWidth,
-        });
-      }, 350);
+    document.getElementById('panelToggle').addEventListener('click', () => {
+      const sb = document.getElementById('panelSidebar');
+      sb.classList.toggle('collapsed');
+      document.getElementById('panelToggle').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+      setTimeout(() => chart.applyOptions({ width: document.getElementById('chartContainer').clientWidth }), 350);
     });
   }
 
-  // Utility
-  function formatPrice(price) {
-    if (!price) return '--';
-    return Number(price).toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-  }
+  function fp(price) { return price ? Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'; }
 
-  // Start app
   document.addEventListener('DOMContentLoaded', init);
 })();
