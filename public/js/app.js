@@ -19,7 +19,7 @@
     createChart();
     setupEventListeners();
     loadAllData();
-    renderSimulator();
+    renderTracker();
   }
 
   function createChart() {
@@ -36,7 +36,6 @@
     new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })).observe(container);
   }
 
-  // Load historical data from Binance REST API
   async function loadAllData() {
     for (const tf of TIMEFRAMES) {
       try {
@@ -46,14 +45,12 @@
       } catch (e) { candleData[tf] = []; }
     }
 
-    // HTF analysis
     for (const tf of ['4h', '1d']) {
       if (candleData[tf] && candleData[tf].length > 50) {
         htfAnalysis[tf] = { structure: SMC.analyzeStructure(candleData[tf]) };
       }
     }
 
-    // Display current timeframe
     displayTimeframe(currentTimeframe);
     connectBinanceWS();
   }
@@ -69,7 +66,6 @@
 
   function connectBinanceWS() {
     if (binanceWs) binanceWs.close();
-
     const streams = TIMEFRAMES.map(tf => `btcusdt@kline_${tf}`).join('/');
     binanceWs = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
 
@@ -89,21 +85,19 @@
         if (candles.length > MAX_CANDLES) candles.shift();
       }
 
-      // Update HTF analysis
       if (tf === '4h' || tf === '1d') {
         if (candles.length > 50) htfAnalysis[tf] = { structure: SMC.analyzeStructure(candles) };
       }
 
-      // Update chart if viewing this timeframe
       if (tf === currentTimeframe) {
         candleSeries.update(candle);
         updatePriceDisplay(candle);
         runAnalysis(tf);
       }
 
-      // Update simulator with current price
-      Simulator.updatePositions(candle.close);
-      renderSimulator();
+      // Update signal tracker
+      SignalTracker.updateWithPrice(candle.close);
+      renderTracker();
     };
 
     binanceWs.onclose = () => setTimeout(connectBinanceWS, 3000);
@@ -121,27 +115,23 @@
     const volume = SMC.analyzeVolume(candles);
     const session = SMC.getCurrentSession();
 
-    // HTF trend
     const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
     const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
     const htfTrend = t4h === t1d ? t4h : t4h;
 
     const signals = SMC.generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend);
 
-    // Open simulator positions for new signals
+    // Track new signals
     const now = Date.now();
     if (signals.length > 0 && now - lastSignalTime > 30000) {
       for (const s of signals) {
-        Simulator.openPosition({ ...s, timeframe: tf });
+        SignalTracker.addSignal({ ...s, timeframe: tf });
       }
       lastSignalTime = now;
-      renderSimulator();
+      renderTracker();
     }
 
-    // Draw on chart
     drawAnalysis(structure, obs, fvgs, liquidity, pd, signals);
-
-    // Update panel
     updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend);
   }
 
@@ -149,37 +139,31 @@
     markers = [];
     clearDrawnObjects();
 
-    // BOS/CHoCH
     for (const b of (structure.bos || []).slice(-8)) markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#2196f3', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
     for (const c of (structure.choch || []).slice(-4)) markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ff9800', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
 
-    // OBs
     for (const ob of obs.slice(-5)) {
       const color = ob.type === 'ob_bullish' ? '#26a69a' : '#ef5350';
       drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.top, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: ob.type === 'ob_bullish' ? 'OB↑' : 'OB↓' }));
       drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.bottom, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: '' }));
     }
 
-    // FVGs
     for (const fvg of fvgs.slice(-5)) {
       const color = fvg.type === 'fvg_bullish' ? 'rgba(171,71,188,0.6)' : 'rgba(255,152,0,0.6)';
       drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.top, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: fvg.type === 'fvg_bullish' ? 'FVG↑' : 'FVG↓' }));
       drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.bottom, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' }));
     }
 
-    // Liquidity
     for (const liq of liquidity.slice(-6)) {
       drawnObjects.liquidity.push(candleSeries.createPriceLine({ price: liq.price, color: '#ffeb3b', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: liq.type.includes('high') ? 'LIQ$↑' : 'LIQ$↓' }));
     }
 
-    // P/D
     if (pd) {
       drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.equilibrium, color: '#787b86', lineWidth: 1, lineStyle: 4, axisLabelVisible: true, title: 'EQ' }));
       drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeHigh, color: 'rgba(239,83,80,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Premium' }));
       drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeLow, color: 'rgba(38,166,154,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Discount' }));
     }
 
-    // Signals
     for (const s of signals.slice(-3)) {
       markers.push({ time: s.time, position: s.type === 'long' ? 'belowBar' : 'aboveBar', color: s.type === 'long' ? '#26a69a' : '#ef5350', shape: s.type === 'long' ? 'arrowUp' : 'arrowDown', text: s.type === 'long' ? 'LONG' : 'SHORT' });
       if (s.sl) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.sl, color: '#ef5350', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'SL' }));
@@ -243,84 +227,76 @@
     document.getElementById('fvgCount').textContent = fvgs.length;
     document.getElementById('liqCount').textContent = liquidity.length;
     document.getElementById('bosCount').textContent = (structure.bos || []).length + (structure.choch || []).length;
-
-    // Signals
-    const sc = document.getElementById('signalsList');
-    if (!signals || signals.length === 0) { sc.innerHTML = '<div class="no-signals">Sin señales activas</div>'; }
-    else {
-      sc.innerHTML = signals.map(s => `
-        <div class="signal-card ${s.type}">
-          <div class="signal-header"><span class="signal-type ${s.type}">${s.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span><span class="signal-confidence ${s.confidence}">${s.confidence}</span></div>
-          <div class="signal-details">
-            <div class="signal-detail"><span class="signal-detail-label">Entrada</span><span class="signal-detail-value">${fp(s.entry)}</span></div>
-            <div class="signal-detail"><span class="signal-detail-label">SL</span><span class="signal-detail-value" style="color:#ef5350">${fp(s.sl)}</span></div>
-            <div class="signal-detail"><span class="signal-detail-label">TP</span><span class="signal-detail-value" style="color:#26a69a">${fp(s.tp)}</span></div>
-          </div>
-          <div class="signal-details">
-            <div class="signal-detail"><span class="signal-detail-label">R:R</span><span class="signal-detail-value">1:${s.rr}</span></div>
-            <div class="signal-detail"><span class="signal-detail-label">Tamaño</span><span class="signal-detail-value">$20</span></div>
-            <div class="signal-detail"><span class="signal-detail-label">Conf.</span><span class="signal-detail-value">${s.confidence}</span></div>
-          </div>
-          <div class="signal-reason">${s.reason}</div>
-        </div>`).join('');
-    }
   }
 
-  function renderSimulator() {
-    const stats = Simulator.getStats();
-    const bal = parseFloat(stats.balance);
-    const balEl = document.getElementById('simBalance');
-    balEl.textContent = `$${stats.balance}`;
-    balEl.className = `sim-balance-value ${bal > 0 ? 'positive' : bal < 0 ? 'negative' : 'neutral'}`;
-
-    const roi = stats.totalTrades > 0 ? ((bal / (stats.totalTrades * 20)) * 100).toFixed(2) : '0.00';
-    const roiEl = document.getElementById('simRoi');
-    roiEl.textContent = `${roi}%`;
-    roiEl.className = `sim-balance-value ${parseFloat(roi) > 0 ? 'positive' : parseFloat(roi) < 0 ? 'negative' : 'neutral'}`;
-
+  function renderTracker() {
+    const stats = SignalTracker.getStats();
     document.getElementById('simWinRate').textContent = stats.winRate;
     document.getElementById('simWins').textContent = stats.wins;
     document.getElementById('simLosses').textContent = stats.losses;
-    document.getElementById('simPF').textContent = stats.profitFactor;
-    document.getElementById('simAvgWin').textContent = `$${stats.avgWin}`;
-    document.getElementById('simAvgLoss').textContent = `$${stats.avgLoss}`;
-    document.getElementById('simMaxDD').textContent = `$${stats.maxDrawdown}`;
-    document.getElementById('simMaxStreak').textContent = stats.maxConsecLosses;
+    document.getElementById('simActive').textContent = stats.active;
 
-    // Open positions
-    const positions = Simulator.getOpenPositions();
-    const pc = document.getElementById('positionsList');
-    if (positions.length === 0) { pc.innerHTML = '<div class="no-signals">Sin posiciones abiertas</div>'; }
-    else {
-      pc.innerHTML = positions.map(p => {
-        const pnl = p.currentPnl || 0;
-        return `<div class="position-card ${p.type}">
-          <div class="position-header"><span class="position-type ${p.type}">${p.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span><span class="position-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} (${p.currentPnlPercent}%)</span></div>
-          <div class="position-details">
-            <div class="position-detail"><span class="position-detail-label">Entrada</span><span class="position-detail-value">${fp(p.entry)}</span></div>
-            <div class="position-detail"><span class="position-detail-label">SL</span><span class="position-detail-value" style="color:#ef5350">${fp(p.sl)}</span></div>
-            <div class="position-detail"><span class="position-detail-label">TP</span><span class="position-detail-value" style="color:#26a69a">${fp(p.tp)}</span></div>
-            <div class="position-detail"><span class="position-detail-label">Tamaño</span><span class="position-detail-value">$${p.positionSize}</span></div>
-          </div></div>`;
+    // Active signals with feasibility
+    const active = SignalTracker.getActive();
+    const sc = document.getElementById('signalsList');
+    if (active.length === 0) {
+      sc.innerHTML = '<div class="no-signals">Sin señales activas</div>';
+    } else {
+      sc.innerHTML = active.map(s => {
+        const age = Math.floor((Date.now() - s.createdAt) / 60000);
+        const ageStr = age < 60 ? `${age}m` : `${Math.floor(age / 60)}h ${age % 60}m`;
+        const feasibleClass = s.feasible ? 'feasible-yes' : 'feasible-no';
+        const feasibleIcon = s.feasible ? '✅' : '⛔';
+
+        return `
+          <div class="signal-card ${s.type}">
+            <div class="signal-header">
+              <span class="signal-type ${s.type}">${s.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span>
+              <span class="signal-confidence ${s.confidence}">${s.confidence}</span>
+            </div>
+            <div class="signal-details">
+              <div class="signal-detail"><span class="signal-detail-label">Entrada</span><span class="signal-detail-value">${fp(s.entry)}</span></div>
+              <div class="signal-detail"><span class="signal-detail-label">SL</span><span class="signal-detail-value" style="color:#ef5350">${fp(s.sl)}</span></div>
+              <div class="signal-detail"><span class="signal-detail-label">TP</span><span class="signal-detail-value" style="color:#26a69a">${fp(s.tp)}</span></div>
+            </div>
+            <div class="signal-details">
+              <div class="signal-detail"><span class="signal-detail-label">R:R</span><span class="signal-detail-value">1:${s.rr}</span></div>
+              <div class="signal-detail"><span class="signal-detail-label">TF</span><span class="signal-detail-value">${s.timeframe}</span></div>
+              <div class="signal-detail"><span class="signal-detail-label">Hace</span><span class="signal-detail-value">${ageStr}</span></div>
+            </div>
+            <div class="feasibility-badge ${feasibleClass}">
+              ${feasibleIcon} ${s.feasible ? 'ENTRAR' : 'NO ENTRAR'} — ${s.feasibleReason}
+            </div>
+            <div class="signal-reason">${s.reason}</div>
+          </div>`;
       }).join('');
     }
 
-    // Closed trades
-    const trades = Simulator.getClosedTrades(20);
-    const tc = document.getElementById('tradesHistory');
-    if (trades.length === 0) { tc.innerHTML = '<div class="no-signals">Sin trades cerrados</div>'; }
-    else {
-      tc.innerHTML = trades.map(t => {
-        const pnl = parseFloat(t.netPnl);
-        const time = new Date(t.closedAt).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        return `<div class="history-item ${t.type} ${t.result}">
-          <div class="history-item-header"><span class="history-type ${t.type}">${t.result === 'win' ? '✅' : '❌'} ${t.type.toUpperCase()}</span><span class="history-time">${time}</span><span class="history-pnl ${pnl >= 0 ? 'positive' : 'negative'}">${pnl >= 0 ? '+' : ''}$${t.netPnl}</span></div>
-          <div class="history-risk">
-            <div class="history-risk-item"><span class="history-risk-label">Entrada</span><span class="history-risk-value">${fp(t.entry)}</span></div>
-            <div class="history-risk-item"><span class="history-risk-label">Cierre</span><span class="history-risk-value">${fp(t.closePrice)}</span></div>
-            <div class="history-risk-item"><span class="history-risk-label">Razón</span><span class="history-risk-value">${t.closeReason === 'tp' ? 'TP' : t.closeReason === 'sl' ? 'SL' : 'LIQ'}</span></div>
-            <div class="history-risk-item"><span class="history-risk-label">R:R</span><span class="history-risk-value">1:${t.rr}</span></div>
-          </div></div>`;
+    // History
+    const history = SignalTracker.getHistory(20);
+    const hc = document.getElementById('tradesHistory');
+    if (history.length === 0) {
+      hc.innerHTML = '<div class="no-signals">Sin historial</div>';
+    } else {
+      hc.innerHTML = history.map(s => {
+        const time = new Date(s.closedAt).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const emoji = s.result === 'win' ? '✅' : s.result === 'loss' ? '❌' : '⏰';
+        const label = s.result === 'win' ? 'TP Hit' : s.result === 'loss' ? 'SL Hit' : 'Expirada';
+
+        return `
+          <div class="history-item ${s.type} ${s.result}">
+            <div class="history-item-header">
+              <span class="history-type ${s.type}">${emoji} ${s.type.toUpperCase()}</span>
+              <span class="history-time">${time}</span>
+              <span class="history-pnl ${s.result === 'win' ? 'positive' : s.result === 'loss' ? 'negative' : ''}">${label} (${s.pnlPercent}%)</span>
+            </div>
+            <div class="history-risk">
+              <div class="history-risk-item"><span class="history-risk-label">Entrada</span><span class="history-risk-value">${fp(s.entry)}</span></div>
+              <div class="history-risk-item"><span class="history-risk-label">SL</span><span class="history-risk-value">${fp(s.sl)}</span></div>
+              <div class="history-risk-item"><span class="history-risk-label">TP</span><span class="history-risk-value">${fp(s.tp)}</span></div>
+              <div class="history-risk-item"><span class="history-risk-label">R:R</span><span class="history-risk-value">1:${s.rr}</span></div>
+            </div>
+          </div>`;
       }).join('');
     }
   }

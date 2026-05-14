@@ -48,19 +48,9 @@
           <button class="panel-toggle" id="panelToggle">◀</button>
         </div>
 
-        <!-- Simulator Balance -->
+        <!-- Signal Stats -->
         <div class="panel-section simulator-section">
-          <h3>💰 Simulador ($20)</h3>
-          <div class="sim-balance">
-            <div class="sim-balance-row">
-              <span class="sim-balance-label">Balance PnL:</span>
-              <span class="sim-balance-value" id="simBalance">$0.00</span>
-            </div>
-            <div class="sim-balance-row">
-              <span class="sim-balance-label">ROI:</span>
-              <span class="sim-balance-value" id="simRoi">0.00%</span>
-            </div>
-          </div>
+          <h3>📊 Rendimiento de Señales</h3>
           <div class="sim-stats-grid">
             <div class="sim-stat">
               <span class="sim-stat-value" id="simWinRate">0%</span>
@@ -75,35 +65,25 @@
               <span class="sim-stat-label">Perdidas</span>
             </div>
             <div class="sim-stat">
-              <span class="sim-stat-value" id="simPF">0</span>
-              <span class="sim-stat-label">Profit F.</span>
-            </div>
-          </div>
-          <div class="sim-extra-stats">
-            <div class="sim-extra-row">
-              <span>Avg Win:</span>
-              <span class="win" id="simAvgWin">$0.00</span>
-            </div>
-            <div class="sim-extra-row">
-              <span>Avg Loss:</span>
-              <span class="loss" id="simAvgLoss">$0.00</span>
-            </div>
-            <div class="sim-extra-row">
-              <span>Max DD:</span>
-              <span class="loss" id="simMaxDD">$0.00</span>
-            </div>
-            <div class="sim-extra-row">
-              <span>Racha pérdidas:</span>
-              <span id="simMaxStreak">0</span>
+              <span class="sim-stat-value" id="simActive">0</span>
+              <span class="sim-stat-label">Activas</span>
             </div>
           </div>
         </div>
 
-        <!-- Open Positions -->
+        <!-- Active Signals with Feasibility -->
         <div class="panel-section">
-          <h3>📊 Posiciones Abiertas</h3>
-          <div class="positions-list" id="positionsList">
-            <div class="no-signals">Sin posiciones</div>
+          <h3>🎯 Señales Activas</h3>
+          <div class="signals-list" id="signalsList">
+            <div class="no-signals">Sin señales activas</div>
+          </div>
+        </div>
+
+        <!-- Signal History -->
+        <div class="panel-section">
+          <h3>📜 Historial de Señales</h3>
+          <div class="history-list" id="tradesHistory">
+            <div class="no-signals">Sin historial</div>
           </div>
         </div>
 
@@ -177,22 +157,6 @@
               <span class="context-label">Killzone:</span>
               <span class="context-value" id="ctxKillzone">--</span>
             </div>
-          </div>
-        </div>
-
-        <!-- Active Signals -->
-        <div class="panel-section">
-          <h3>Señales Activas</h3>
-          <div class="signals-list" id="signalsList">
-            <div class="no-signals">Sin señales activas</div>
-          </div>
-        </div>
-
-        <!-- Closed Trades History -->
-        <div class="panel-section">
-          <h3>Historial de Trades</h3>
-          <div class="history-list" id="tradesHistory">
-            <div class="no-signals">Sin trades cerrados</div>
           </div>
         </div>
 

@@ -1,65 +1,78 @@
-// Trade Simulator - Client-side with localStorage persistence
-const Simulator = (function () {
+// Signal Tracker - Tracks active signals and their outcomes
+const SignalTracker = (function () {
   'use strict';
 
-  const CONFIG = { capitalPerTrade: 20, leverage: 1, positionSize: 20, fee: 0.0004 };
-  let openPositions = [];
-  let closedTrades = [];
-  let balance = 0;
+  let activeSignals = [];
+  let historySignals = [];
 
   function load() {
     try {
-      const data = JSON.parse(localStorage.getItem('smc_simulator') || '{}');
-      openPositions = data.openPositions || [];
-      closedTrades = data.closedTrades || [];
-      balance = data.balance || 0;
+      const data = JSON.parse(localStorage.getItem('smc_signals') || '{}');
+      activeSignals = data.active || [];
+      historySignals = data.history || [];
     } catch (e) { /* ignore */ }
   }
 
   function save() {
-    localStorage.setItem('smc_simulator', JSON.stringify({
-      openPositions, closedTrades: closedTrades.slice(0, 100), balance
+    localStorage.setItem('smc_signals', JSON.stringify({
+      active: activeSignals,
+      history: historySignals.slice(0, 100)
     }));
   }
 
-  function openPosition(signal) {
-    const isDup = openPositions.some(p => p.type === signal.type && Math.abs(p.entry - signal.entry) < signal.entry * 0.001 && Date.now() - p.openedAt < 60000);
+  function addSignal(signal) {
+    const isDup = activeSignals.some(s => s.type === signal.type && Math.abs(s.entry - signal.entry) < signal.entry * 0.001 && Date.now() - s.createdAt < 60000);
     if (isDup) return null;
 
-    const pos = {
-      id: `t_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      type: signal.type, entry: signal.entry, sl: signal.sl, tp: signal.tp, rr: signal.rr,
-      capital: CONFIG.capitalPerTrade, leverage: CONFIG.leverage, positionSize: CONFIG.positionSize,
-      entryFee: CONFIG.positionSize * CONFIG.fee,
-      openedAt: Date.now(), timeframe: signal.timeframe || '15m',
-      confidence: signal.confidence, reason: signal.reason,
-      status: 'open', currentPnl: 0, currentPnlPercent: 0
+    const tracked = {
+      id: `s_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      type: signal.type,
+      entry: signal.entry,
+      sl: signal.sl,
+      tp: signal.tp,
+      rr: signal.rr,
+      confidence: signal.confidence,
+      reason: signal.reason,
+      timeframe: signal.timeframe || '15m',
+      createdAt: Date.now(),
+      status: 'active', // active, hit_tp, hit_sl, expired
+      feasible: true,
+      feasibleReason: ''
     };
 
-    openPositions.push(pos);
+    activeSignals.push(tracked);
     save();
-    return pos;
+    return tracked;
   }
 
-  function updatePositions(currentPrice) {
+  function updateWithPrice(currentPrice) {
     let changed = false;
 
-    for (let i = openPositions.length - 1; i >= 0; i--) {
-      const pos = openPositions[i];
-      const diff = pos.type === 'long' ? currentPrice - pos.entry : pos.entry - currentPrice;
-      const pnl = (diff / pos.entry) * pos.positionSize - pos.entryFee;
-      pos.currentPnl = pnl;
-      pos.currentPnlPercent = ((pnl / pos.capital) * 100).toFixed(2);
+    for (let i = activeSignals.length - 1; i >= 0; i--) {
+      const s = activeSignals[i];
 
-      let closeReason = null;
-      if (pos.type === 'long' && currentPrice >= pos.tp) closeReason = 'tp';
-      else if (pos.type === 'short' && currentPrice <= pos.tp) closeReason = 'tp';
-      else if (pos.type === 'long' && currentPrice <= pos.sl) closeReason = 'sl';
-      else if (pos.type === 'short' && currentPrice >= pos.sl) closeReason = 'sl';
-      else if (pnl <= -(pos.capital * 0.95)) closeReason = 'liquidated';
+      // Update feasibility
+      updateFeasibility(s, currentPrice);
 
-      if (closeReason) {
-        closePosition(i, currentPrice, closeReason);
+      // Check TP hit
+      if (s.type === 'long' && currentPrice >= s.tp) {
+        moveToHistory(i, 'hit_tp', currentPrice);
+        changed = true;
+      } else if (s.type === 'short' && currentPrice <= s.tp) {
+        moveToHistory(i, 'hit_tp', currentPrice);
+        changed = true;
+      }
+      // Check SL hit
+      else if (s.type === 'long' && currentPrice <= s.sl) {
+        moveToHistory(i, 'hit_sl', currentPrice);
+        changed = true;
+      } else if (s.type === 'short' && currentPrice >= s.sl) {
+        moveToHistory(i, 'hit_sl', currentPrice);
+        changed = true;
+      }
+      // Expire after 4 hours
+      else if (Date.now() - s.createdAt > 4 * 60 * 60 * 1000) {
+        moveToHistory(i, 'expired', currentPrice);
         changed = true;
       }
     }
@@ -68,48 +81,86 @@ const Simulator = (function () {
     return changed;
   }
 
-  function closePosition(index, closePrice, reason) {
-    const pos = openPositions[index];
-    const diff = pos.type === 'long' ? closePrice - pos.entry : pos.entry - closePrice;
-    const exitFee = CONFIG.positionSize * CONFIG.fee;
-    const netPnl = (diff / pos.entry) * pos.positionSize - pos.entryFee - exitFee;
+  function updateFeasibility(signal, currentPrice) {
+    const entryDist = Math.abs(currentPrice - signal.entry) / signal.entry;
+    const slDist = Math.abs(currentPrice - signal.sl);
+    const tpDist = Math.abs(signal.tp - currentPrice);
+    const totalRange = Math.abs(signal.tp - signal.sl);
+    const progressToTP = signal.type === 'long'
+      ? (currentPrice - signal.entry) / (signal.tp - signal.entry)
+      : (signal.entry - currentPrice) / (signal.entry - signal.tp);
+    const progressToSL = signal.type === 'long'
+      ? (signal.entry - currentPrice) / (signal.entry - signal.sl)
+      : (currentPrice - signal.entry) / (signal.sl - signal.entry);
 
-    closedTrades.unshift({
-      ...pos, closePrice, closedAt: Date.now(), closeReason: reason,
-      netPnl: netPnl.toFixed(2), netPnlPercent: ((netPnl / pos.capital) * 100).toFixed(2),
-      result: netPnl >= 0 ? 'win' : 'loss', status: 'closed'
-    });
+    // Determine if still feasible to enter
+    if (progressToTP >= 0.7) {
+      signal.feasible = false;
+      signal.feasibleReason = 'Precio muy cerca del TP, poco recorrido restante';
+    } else if (progressToSL >= 0.8) {
+      signal.feasible = false;
+      signal.feasibleReason = 'Precio muy cerca del SL, riesgo alto';
+    } else if (entryDist > 0.005 && progressToTP > 0.4) {
+      signal.feasible = false;
+      signal.feasibleReason = 'Precio se alejó del entry, R:R desfavorable';
+    } else {
+      // Calculate current R:R if entering now
+      const currentRisk = signal.type === 'long' ? currentPrice - signal.sl : signal.sl - currentPrice;
+      const currentReward = signal.type === 'long' ? signal.tp - currentPrice : currentPrice - signal.tp;
+      const currentRR = currentRisk > 0 ? currentReward / currentRisk : 0;
 
-    balance += netPnl;
-    openPositions.splice(index, 1);
+      if (currentRR < 0.8) {
+        signal.feasible = false;
+        signal.feasibleReason = `R:R actual ${currentRR.toFixed(1)}:1, desfavorable`;
+      } else if (currentRR >= 1.5) {
+        signal.feasible = true;
+        signal.feasibleReason = `Excelente entrada, R:R ${currentRR.toFixed(1)}:1`;
+      } else if (currentRR >= 1.0) {
+        signal.feasible = true;
+        signal.feasibleReason = `Entrada aceptable, R:R ${currentRR.toFixed(1)}:1`;
+      } else {
+        signal.feasible = true;
+        signal.feasibleReason = `Entrada ajustada, R:R ${currentRR.toFixed(1)}:1`;
+      }
+    }
+  }
+
+  function moveToHistory(index, status, closePrice) {
+    const s = activeSignals[index];
+    s.status = status;
+    s.closedAt = Date.now();
+    s.closePrice = closePrice;
+
+    const priceDiff = s.type === 'long' ? closePrice - s.entry : s.entry - closePrice;
+    s.result = status === 'hit_tp' ? 'win' : status === 'hit_sl' ? 'loss' : 'expired';
+    s.pnlPercent = ((priceDiff / s.entry) * 100).toFixed(2);
+
+    historySignals.unshift(s);
+    activeSignals.splice(index, 1);
   }
 
   function getStats() {
-    const wins = closedTrades.filter(t => t.result === 'win');
-    const losses = closedTrades.filter(t => t.result === 'loss');
-    const total = closedTrades.length;
-    const winRate = total > 0 ? ((wins.length / total) * 100).toFixed(1) : '0.0';
-    const totalProfit = wins.reduce((s, t) => s + parseFloat(t.netPnl), 0);
-    const totalLoss = losses.reduce((s, t) => s + Math.abs(parseFloat(t.netPnl)), 0);
-    const pf = totalLoss > 0 ? (totalProfit / totalLoss).toFixed(2) : '∞';
-    const avgWin = wins.length > 0 ? (totalProfit / wins.length).toFixed(2) : '0.00';
-    const avgLoss = losses.length > 0 ? (totalLoss / losses.length).toFixed(2) : '0.00';
-
-    let maxStreak = 0, streak = 0, peak = 0, maxDD = 0, running = 0;
-    for (const t of [...closedTrades].reverse()) {
-      if (t.result === 'loss') { streak++; maxStreak = Math.max(maxStreak, streak); } else streak = 0;
-      running += parseFloat(t.netPnl); peak = Math.max(peak, running); maxDD = Math.max(maxDD, peak - running);
-    }
-
-    return { totalTrades: total, wins: wins.length, losses: losses.length, winRate: `${winRate}%`, balance: balance.toFixed(2), profitFactor: pf, avgWin, avgLoss, maxConsecLosses: maxStreak, maxDrawdown: maxDD.toFixed(2), openPositions: openPositions.length };
+    const wins = historySignals.filter(s => s.result === 'win').length;
+    const losses = historySignals.filter(s => s.result === 'loss').length;
+    const total = wins + losses;
+    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : '0.0';
+    return { wins, losses, total, winRate: `${winRate}%`, expired: historySignals.filter(s => s.result === 'expired').length, active: activeSignals.length };
   }
 
   function reset() {
-    openPositions = []; closedTrades = []; balance = 0;
+    activeSignals = [];
+    historySignals = [];
     save();
   }
 
   load();
 
-  return { openPosition, updatePositions, getStats, getOpenPositions: () => openPositions, getClosedTrades: (n) => closedTrades.slice(0, n || 30), reset, CONFIG };
+  return {
+    addSignal,
+    updateWithPrice,
+    getActive: () => activeSignals,
+    getHistory: (n) => historySignals.slice(0, n || 30),
+    getStats,
+    reset
+  };
 })();
