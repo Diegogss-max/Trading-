@@ -655,6 +655,123 @@ body {
   border: 1px solid rgba(239, 83, 80, 0.3);
 }
 
+/* Signal Actions */
+.signal-actions {
+  margin-top: 8px;
+}
+
+.btn-entered {
+  background: rgba(33, 150, 243, 0.15);
+  color: var(--accent-blue);
+  border: 1px solid rgba(33, 150, 243, 0.3);
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-entered:hover {
+  background: rgba(33, 150, 243, 0.25);
+}
+
+/* Trade Targets */
+.trade-targets {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.trade-target {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.trade-target.tp {
+  background: rgba(38, 166, 154, 0.1);
+  border: 1px solid rgba(38, 166, 154, 0.25);
+}
+
+.trade-target.sl {
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid rgba(239, 83, 80, 0.25);
+}
+
+.target-label {
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+}
+
+.target-pnl {
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+
+.trade-target.tp .target-pnl { color: var(--accent-green); }
+.trade-target.sl .target-pnl { color: var(--accent-red); }
+
+/* Trade Actions */
+.trade-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-close-tp, .btn-close-sl, .btn-close-manual {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid;
+  transition: all 0.2s;
+}
+
+.btn-close-tp {
+  background: rgba(38, 166, 154, 0.1);
+  color: var(--accent-green);
+  border-color: rgba(38, 166, 154, 0.3);
+}
+
+.btn-close-sl {
+  background: rgba(239, 83, 80, 0.1);
+  color: var(--accent-red);
+  border-color: rgba(239, 83, 80, 0.3);
+}
+
+.btn-close-manual {
+  background: rgba(120, 123, 134, 0.1);
+  color: var(--text-secondary);
+  border-color: rgba(120, 123, 134, 0.3);
+}
+
+.btn-close-tp:hover { background: rgba(38, 166, 154, 0.2); }
+.btn-close-sl:hover { background: rgba(239, 83, 80, 0.2); }
+.btn-close-manual:hover { background: rgba(120, 123, 134, 0.2); }
+
+/* My Stats */
+.my-stats {
+  display: flex;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border-radius: 5px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.my-stat { color: var(--text-secondary); }
+.my-stat.win b { color: var(--accent-green); }
+.my-stat.loss b { color: var(--accent-red); }
+.my-stat b { color: var(--text-primary); }
+
 /* History List */
 .history-list {
   display: flex;
