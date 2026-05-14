@@ -258,7 +258,7 @@
           </div>
           <div class="signal-details">
             <div class="signal-detail"><span class="signal-detail-label">R:R</span><span class="signal-detail-value">1:${s.rr}</span></div>
-            <div class="signal-detail"><span class="signal-detail-label">Tamaño</span><span class="signal-detail-value">$600</span></div>
+            <div class="signal-detail"><span class="signal-detail-label">Tamaño</span><span class="signal-detail-value">$20</span></div>
             <div class="signal-detail"><span class="signal-detail-label">Conf.</span><span class="signal-detail-value">${s.confidence}</span></div>
           </div>
           <div class="signal-reason">${s.reason}</div>

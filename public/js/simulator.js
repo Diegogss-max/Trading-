@@ -2,7 +2,7 @@
 const Simulator = (function () {
   'use strict';
 
-  const CONFIG = { capitalPerTrade: 20, leverage: 30, positionSize: 600, fee: 0.0004 };
+  const CONFIG = { capitalPerTrade: 20, leverage: 1, positionSize: 20, fee: 0.0004 };
   let openPositions = [];
   let closedTrades = [];
   let balance = 0;
