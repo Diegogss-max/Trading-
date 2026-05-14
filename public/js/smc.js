@@ -570,6 +570,102 @@ const SMC = (function () {
     return count > 0 ? sum / count : 1;
   }
 
+  // ===== REFINED ENTRY =====
+  // Takes a signal from 15m and refines it using lower timeframe (5m/1m)
+  // Looks for CHoCH in the LTF within the signal zone for precise entry
+  function refineEntry(signal, ltfCandles) {
+    if (!ltfCandles || ltfCandles.length < 30) return null;
+
+    const zone = { top: Math.max(signal.entry, signal.sl) + Math.abs(signal.entry - signal.sl) * 0.5, bottom: Math.min(signal.entry, signal.sl) };
+
+    // Find candles within or near the zone (last 30 candles of LTF)
+    const recent = ltfCandles.slice(-30);
+    const structure = analyzeStructure(ltfCandles.slice(-100));
+
+    // Look for CHoCH in the direction of the trade
+    const targetChoch = signal.type === 'long' ? 'choch_bullish' : 'choch_bearish';
+    const targetBos = signal.type === 'long' ? 'bos_bullish' : 'bos_bearish';
+
+    // Find the most recent CHoCH or BOS in our direction within the zone
+    let entryConfirmation = null;
+
+    // Check CHoCH first (stronger signal)
+    for (let i = structure.choch.length - 1; i >= Math.max(0, structure.choch.length - 5); i--) {
+      const ch = structure.choch[i];
+      if (ch.type === targetChoch) {
+        const chPrice = ch.price;
+        // Verify it happened near our zone
+        const distToEntry = Math.abs(chPrice - signal.entry) / signal.entry;
+        if (distToEntry < 0.005) { // Within 0.5% of original entry
+          entryConfirmation = { type: 'choch', price: chPrice, time: ch.time, index: ch.index };
+          break;
+        }
+      }
+    }
+
+    // If no CHoCH, check BOS
+    if (!entryConfirmation) {
+      for (let i = structure.bos.length - 1; i >= Math.max(0, structure.bos.length - 5); i--) {
+        const b = structure.bos[i];
+        if (b.type === targetBos) {
+          const bPrice = b.price;
+          const distToEntry = Math.abs(bPrice - signal.entry) / signal.entry;
+          if (distToEntry < 0.005) {
+            entryConfirmation = { type: 'bos', price: bPrice, time: b.time, index: b.index };
+            break;
+          }
+        }
+      }
+    }
+
+    if (!entryConfirmation) return null;
+
+    // Calculate refined SL: just below/above the LTF swing that created the CHoCH
+    let refinedSL;
+    if (signal.type === 'long') {
+      // SL below the swing low that preceded the CHoCH
+      let swingLow = recent[0].low;
+      const lookStart = Math.max(0, entryConfirmation.index - 10);
+      for (let i = lookStart; i <= entryConfirmation.index && i < ltfCandles.length; i++) {
+        if (ltfCandles[i].low < swingLow) swingLow = ltfCandles[i].low;
+      }
+      refinedSL = swingLow - (signal.entry - swingLow) * 0.1; // Small buffer
+    } else {
+      // SL above the swing high that preceded the CHoCH
+      let swingHigh = recent[0].high;
+      const lookStart = Math.max(0, entryConfirmation.index - 10);
+      for (let i = lookStart; i <= entryConfirmation.index && i < ltfCandles.length; i++) {
+        if (ltfCandles[i].high > swingHigh) swingHigh = ltfCandles[i].high;
+      }
+      refinedSL = swingHigh + (swingHigh - signal.entry) * 0.1;
+    }
+
+    // Keep the same TP from the higher timeframe
+    const refinedEntry = ltfCandles[ltfCandles.length - 1].close;
+    const refinedRR = calcRR(refinedEntry, refinedSL, signal.tp);
+
+    // Only return if the refined entry actually improves R:R
+    if (refinedRR <= parseFloat(signal.rr)) return null;
+
+    return {
+      type: signal.type,
+      entry: refinedEntry,
+      sl: refinedSL,
+      tp: signal.tp,
+      rr: refinedRR.toFixed(2),
+      originalEntry: signal.entry,
+      originalSL: signal.sl,
+      originalRR: signal.rr,
+      confirmation: entryConfirmation,
+      improvement: {
+        slReduction: Math.abs(Math.abs(signal.entry - signal.sl) - Math.abs(refinedEntry - refinedSL)).toFixed(2),
+        slReductionPercent: ((1 - Math.abs(refinedEntry - refinedSL) / Math.abs(signal.entry - signal.sl)) * 100).toFixed(1),
+        rrImprovement: (refinedRR - parseFloat(signal.rr)).toFixed(2)
+      },
+      reason: `Entrada refinada: ${entryConfirmation.type.toUpperCase()} ${signal.type === 'long' ? 'alcista' : 'bajista'} en LTF. SL reducido ${((1 - Math.abs(refinedEntry - refinedSL) / Math.abs(signal.entry - signal.sl)) * 100).toFixed(0)}%. R:R mejorado de 1:${signal.rr} → 1:${refinedRR.toFixed(2)}.`
+    };
+  }
+
   // ===== PUBLIC API =====
   return {
     analyzeStructure,
@@ -579,6 +675,7 @@ const SMC = (function () {
     calculatePremiumDiscount,
     generateSignals,
     analyzeVolume,
-    getCurrentSession
+    getCurrentSession,
+    refineEntry
   };
 })();

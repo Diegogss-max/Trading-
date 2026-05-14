@@ -173,18 +173,41 @@
 
     const signals = SMC.generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend);
 
+    // Refine entries using lower timeframe
+    const refinedSignals = [];
+    for (const signal of signals) {
+      // Try to refine with 5m first, then 1m
+      let refined = null;
+      if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
+        refined = SMC.refineEntry(signal, candleData['5m']);
+      }
+      if (!refined && tf !== '1m' && candleData['1m'] && candleData['1m'].length > 50) {
+        refined = SMC.refineEntry(signal, candleData['1m']);
+      }
+
+      if (refined) {
+        refinedSignals.push({
+          ...signal,
+          refined: refined,
+          hasRefinedEntry: true
+        });
+      } else {
+        refinedSignals.push({ ...signal, hasRefinedEntry: false });
+      }
+    }
+
     // Track new signals
     const now = Date.now();
-    if (signals.length > 0 && now - lastSignalTime > 30000) {
-      for (const s of signals) {
+    if (refinedSignals.length > 0 && now - lastSignalTime > 30000) {
+      for (const s of refinedSignals) {
         SignalTracker.addSignal({ ...s, timeframe: tf });
       }
       lastSignalTime = now;
       renderTracker();
     }
 
-    drawAnalysis(structure, obs, fvgs, liquidity, pd, signals);
-    updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend);
+    drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
+    updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend);
   }
 
   function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
@@ -326,6 +349,16 @@
               <div class="signal-detail"><span class="signal-detail-label">TF</span><span class="signal-detail-value">${s.timeframe}</span></div>
               <div class="signal-detail"><span class="signal-detail-label">Hace</span><span class="signal-detail-value">${ageStr}</span></div>
             </div>
+            ${s.refined ? `
+            <div class="refined-entry-badge">
+              <div class="refined-header">🎯 ENTRADA REFINADA (LTF)</div>
+              <div class="refined-details">
+                <div class="refined-detail"><span>Entry:</span><span>${fp(s.refined.entry)}</span></div>
+                <div class="refined-detail"><span>SL:</span><span style="color:#ef5350">${fp(s.refined.sl)}</span></div>
+                <div class="refined-detail"><span>R:R:</span><span style="color:#00e676">1:${s.refined.rr}</span></div>
+              </div>
+              <div class="refined-improvement">SL reducido ${s.refined.improvement.slReductionPercent}% · R:R +${s.refined.improvement.rrImprovement}</div>
+            </div>` : ''}
             <div class="feasibility-badge ${feasibleClass}">
               ${feasibleIcon} ${s.feasible ? 'ENTRAR' : 'NO ENTRAR'} — ${s.feasibleReason}
             </div>

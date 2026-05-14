@@ -643,6 +643,50 @@ body {
   font-weight: 600;
 }
 
+/* Refined Entry Badge */
+.refined-entry-badge {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 230, 118, 0.06);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+}
+
+.refined-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #00e676;
+  margin-bottom: 6px;
+}
+
+.refined-details {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.refined-detail {
+  display: flex;
+  gap: 4px;
+}
+
+.refined-detail span:first-child {
+  color: var(--text-muted);
+}
+
+.refined-detail span:last-child {
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: var(--text-primary);
+}
+
+.refined-improvement {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #00e676;
+  font-weight: 500;
+}
+
 .feasibility-badge.feasible-yes {
   background: rgba(38, 166, 154, 0.12);
   color: var(--accent-green);
