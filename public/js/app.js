@@ -191,35 +191,45 @@
     markers = [];
     clearDrawnObjects();
 
-    for (const b of (structure.bos || []).slice(-8)) markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#2196f3', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
-    for (const c of (structure.choch || []).slice(-4)) markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ff9800', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
+    // BOS markers (blue arrows)
+    for (const b of (structure.bos || []).slice(-8)) markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
+    // CHoCH markers (orange, more visible)
+    for (const c of (structure.choch || []).slice(-4)) markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
 
+    // ORDER BLOCKS - Solid thick lines, bright colors
     for (const ob of obs.slice(-5)) {
-      const color = ob.type === 'ob_bullish' ? '#26a69a' : '#ef5350';
-      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.top, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: ob.type === 'ob_bullish' ? 'OB↑' : 'OB↓' }));
-      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.bottom, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: false, title: '' }));
+      const isBull = ob.type === 'ob_bullish';
+      const color = isBull ? '#00e676' : '#ff1744'; // Bright green / bright red
+      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.top, color, lineWidth: 3, lineStyle: 0, axisLabelVisible: true, title: isBull ? '── OB Bull ──' : '── OB Bear ──' }));
+      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.bottom, color, lineWidth: 3, lineStyle: 0, axisLabelVisible: false, title: '' }));
     }
 
+    // FVGs - Dashed lines, purple/orange distinct from OBs
     for (const fvg of fvgs.slice(-5)) {
-      const color = fvg.type === 'fvg_bullish' ? 'rgba(171,71,188,0.6)' : 'rgba(255,152,0,0.6)';
-      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.top, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: fvg.type === 'fvg_bullish' ? 'FVG↑' : 'FVG↓' }));
-      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.bottom, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' }));
+      const isBull = fvg.type === 'fvg_bullish';
+      const color = isBull ? '#ce93d8' : '#ffb74d'; // Light purple / light orange
+      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.top, color, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: isBull ? '┄ FVG Bull ┄' : '┄ FVG Bear ┄' }));
+      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.bottom, color, lineWidth: 2, lineStyle: 2, axisLabelVisible: false, title: '' }));
     }
 
+    // LIQUIDITY - Dotted yellow lines, clearly labeled
     for (const liq of liquidity.slice(-6)) {
-      drawnObjects.liquidity.push(candleSeries.createPriceLine({ price: liq.price, color: '#ffeb3b', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: liq.type.includes('high') ? 'LIQ$↑' : 'LIQ$↓' }));
+      const isHigh = liq.type.includes('high');
+      drawnObjects.liquidity.push(candleSeries.createPriceLine({ price: liq.price, color: '#ffd600', lineWidth: 2, lineStyle: 3, axisLabelVisible: true, title: isHigh ? '$$$ LIQ High' : '$$$ LIQ Low' }));
     }
 
+    // PREMIUM / DISCOUNT - Subtle zone markers
     if (pd) {
-      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.equilibrium, color: '#787b86', lineWidth: 1, lineStyle: 4, axisLabelVisible: true, title: 'EQ' }));
-      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeHigh, color: 'rgba(239,83,80,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Premium' }));
-      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeLow, color: 'rgba(38,166,154,0.35)', lineWidth: 1, lineStyle: 3, axisLabelVisible: false, title: 'Discount' }));
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.equilibrium, color: '#90a4ae', lineWidth: 2, lineStyle: 4, axisLabelVisible: true, title: '═══ EQUILIBRIO ═══' }));
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeHigh, color: '#ef5350', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: '▲ PREMIUM' }));
+      drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeLow, color: '#26a69a', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: '▼ DISCOUNT' }));
     }
 
+    // SIGNALS - Entry, SL, TP clearly marked
     for (const s of signals.slice(-3)) {
-      markers.push({ time: s.time, position: s.type === 'long' ? 'belowBar' : 'aboveBar', color: s.type === 'long' ? '#26a69a' : '#ef5350', shape: s.type === 'long' ? 'arrowUp' : 'arrowDown', text: s.type === 'long' ? 'LONG' : 'SHORT' });
-      if (s.sl) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.sl, color: '#ef5350', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'SL' }));
-      if (s.tp) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.tp, color: '#26a69a', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'TP' }));
+      markers.push({ time: s.time, position: s.type === 'long' ? 'belowBar' : 'aboveBar', color: s.type === 'long' ? '#00e676' : '#ff1744', shape: s.type === 'long' ? 'arrowUp' : 'arrowDown', text: s.type === 'long' ? '▲ LONG' : '▼ SHORT' });
+      if (s.sl) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.sl, color: '#ff1744', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: '✗ SL' }));
+      if (s.tp) drawnObjects.obs.push(candleSeries.createPriceLine({ price: s.tp, color: '#00e676', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: '✓ TP' }));
     }
 
     markers.sort((a, b) => a.time - b.time);
