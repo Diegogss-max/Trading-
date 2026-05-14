@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMC Trading - BTC/USDT</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-left">
+        <h1>SMC Trading</h1>
+        <span class="pair-badge">BTC/USDT</span>
+        <span class="price-display" id="currentPrice">--</span>
+        <span class="price-change" id="priceChange">--</span>
+      </div>
+      <div class="header-center">
+        <div class="session-indicator" id="sessionIndicator">
+          <span class="session-dot" id="sessionDot"></span>
+          <span class="session-label" id="sessionLabel">--</span>
+        </div>
+        <div class="killzone-badge" id="killzoneBadge">
+          <span id="killzoneLabel">--</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="timeframe-selector" id="timeframeSelector">
+          <button data-tf="1m">1m</button>
+          <button data-tf="5m">5m</button>
+          <button data-tf="15m" class="active">15m</button>
+          <button data-tf="1h">1h</button>
+          <button data-tf="4h">4h</button>
+          <button data-tf="1d">1D</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <div class="chart-container" id="chartContainer"></div>
+
+      <aside class="panel-sidebar" id="panelSidebar">
+        <div class="panel-header">
+          <h2>Panel SMC</h2>
+          <button class="panel-toggle" id="panelToggle">◀</button>
+        </div>
+
+        <!-- Simulator Balance -->
+        <div class="panel-section simulator-section">
+          <h3>💰 Simulador (x30)</h3>
+          <div class="sim-balance">
+            <div class="sim-balance-row">
+              <span class="sim-balance-label">Balance PnL:</span>
+              <span class="sim-balance-value" id="simBalance">$0.00</span>
+            </div>
+            <div class="sim-balance-row">
+              <span class="sim-balance-label">ROI:</span>
+              <span class="sim-balance-value" id="simRoi">0.00%</span>
+            </div>
+          </div>
+          <div class="sim-stats-grid">
+            <div class="sim-stat">
+              <span class="sim-stat-value" id="simWinRate">0%</span>
+              <span class="sim-stat-label">Win Rate</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value win" id="simWins">0</span>
+              <span class="sim-stat-label">Ganadas</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value loss" id="simLosses">0</span>
+              <span class="sim-stat-label">Perdidas</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value" id="simPF">0</span>
+              <span class="sim-stat-label">Profit F.</span>
+            </div>
+          </div>
+          <div class="sim-extra-stats">
+            <div class="sim-extra-row">
+              <span>Avg Win:</span>
+              <span class="win" id="simAvgWin">$0.00</span>
+            </div>
+            <div class="sim-extra-row">
+              <span>Avg Loss:</span>
+              <span class="loss" id="simAvgLoss">$0.00</span>
+            </div>
+            <div class="sim-extra-row">
+              <span>Max DD:</span>
+              <span class="loss" id="simMaxDD">$0.00</span>
+            </div>
+            <div class="sim-extra-row">
+              <span>Racha pérdidas:</span>
+              <span id="simMaxStreak">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Open Positions -->
+        <div class="panel-section">
+          <h3>📊 Posiciones Abiertas</h3>
+          <div class="positions-list" id="positionsList">
+            <div class="no-signals">Sin posiciones</div>
+          </div>
+        </div>
+
+        <!-- Multi-Timeframe Summary -->
+        <div class="panel-section">
+          <h3>Multi-Timeframe</h3>
+          <div class="mtf-grid" id="mtfGrid">
+            <div class="mtf-item" data-tf="1d">
+              <span class="mtf-label">1D</span>
+              <span class="mtf-trend" id="mtf-1d">--</span>
+            </div>
+            <div class="mtf-item" data-tf="4h">
+              <span class="mtf-label">4H</span>
+              <span class="mtf-trend" id="mtf-4h">--</span>
+            </div>
+            <div class="mtf-item" data-tf="1h">
+              <span class="mtf-label">1H</span>
+              <span class="mtf-trend" id="mtf-1h">--</span>
+            </div>
+            <div class="mtf-item" data-tf="15m">
+              <span class="mtf-label">15m</span>
+              <span class="mtf-trend" id="mtf-15m">--</span>
+            </div>
+            <div class="mtf-item" data-tf="5m">
+              <span class="mtf-label">5m</span>
+              <span class="mtf-trend" id="mtf-5m">--</span>
+            </div>
+            <div class="mtf-item" data-tf="1m">
+              <span class="mtf-label">1m</span>
+              <span class="mtf-trend" id="mtf-1m">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Volume & Pressure -->
+        <div class="panel-section">
+          <h3>Volumen & Presión</h3>
+          <div class="volume-info" id="volumeInfo">
+            <div class="volume-row">
+              <span class="vol-label">Vol. Relativo:</span>
+              <span class="vol-value" id="volRelative">--</span>
+            </div>
+            <div class="volume-row">
+              <span class="vol-label">Tendencia Vol:</span>
+              <span class="vol-value" id="volTrend">--</span>
+            </div>
+            <div class="pressure-bar">
+              <div class="pressure-buy" id="pressureBuy" style="width:50%"></div>
+              <div class="pressure-sell" id="pressureSell" style="width:50%"></div>
+            </div>
+            <div class="pressure-labels">
+              <span class="pressure-label buy">Compra <span id="buyPercent">50%</span></span>
+              <span class="pressure-label sell">Venta <span id="sellPercent">50%</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Market Context -->
+        <div class="panel-section">
+          <h3>Contexto</h3>
+          <div class="market-context" id="marketContext">
+            <div class="context-item">
+              <span class="context-label">Zona P/D:</span>
+              <span class="context-value" id="pdZone">--</span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Sesión:</span>
+              <span class="context-value" id="ctxSession">--</span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Killzone:</span>
+              <span class="context-value" id="ctxKillzone">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Signals -->
+        <div class="panel-section">
+          <h3>Señales Activas</h3>
+          <div class="signals-list" id="signalsList">
+            <div class="no-signals">Sin señales activas</div>
+          </div>
+        </div>
+
+        <!-- Closed Trades History -->
+        <div class="panel-section">
+          <h3>Historial de Trades</h3>
+          <div class="history-list" id="tradesHistory">
+            <div class="no-signals">Sin trades cerrados</div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="panel-section legend-section">
+          <h3>Leyenda</h3>
+          <div class="legend">
+            <div class="legend-item"><span class="legend-color" style="background:#26a69a"></span> OB Alcista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ef5350"></span> OB Bajista</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(171,71,188,0.6)"></span> FVG Alcista</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(255,152,0,0.6)"></span> FVG Bajista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ffeb3b"></span> Liquidez</div>
+            <div class="legend-item"><span class="legend-color" style="background:#2196f3"></span> BOS</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ff9800"></span> CHoCH</div>
+            <div class="legend-item"><span class="legend-color" style="background:#787b86"></span> Equilibrio</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
