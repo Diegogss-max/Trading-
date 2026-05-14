@@ -69,8 +69,16 @@
     const streams = TIMEFRAMES.map(tf => `btcusdt@kline_${tf}`).join('/');
     binanceWs = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
 
+    let connected = false;
+
+    binanceWs.onopen = () => {
+      connected = true;
+      console.log('Binance WS connected');
+    };
+
     binanceWs.onmessage = (event) => {
       const msg = JSON.parse(event.data);
+      if (!msg.data || !msg.data.k) return;
       const k = msg.data.k;
       const tf = k.i;
       const candle = { time: Math.floor(k.t / 1000), open: +k.o, high: +k.h, low: +k.l, close: +k.c, volume: +k.v };
@@ -95,12 +103,56 @@
         runAnalysis(tf);
       }
 
-      // Update signal tracker
       SignalTracker.updateWithPrice(candle.close);
       renderTracker();
+      renderMyTrades();
     };
 
-    binanceWs.onclose = () => setTimeout(connectBinanceWS, 3000);
+    binanceWs.onerror = (err) => {
+      console.log('Binance WS error, falling back to polling');
+      if (!connected) startPolling();
+    };
+
+    binanceWs.onclose = () => {
+      console.log('Binance WS closed');
+      setTimeout(connectBinanceWS, 5000);
+    };
+
+    // If not connected after 5s, start polling as fallback
+    setTimeout(() => { if (!connected) startPolling(); }, 5000);
+  }
+
+  let pollingInterval = null;
+  function startPolling() {
+    if (pollingInterval) return;
+    console.log('Starting polling fallback');
+    pollingInterval = setInterval(async () => {
+      try {
+        const resp = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${currentTimeframe}&limit=2`);
+        const data = await resp.json();
+        if (!data || data.length === 0) return;
+
+        const latest = data[data.length - 1];
+        const candle = { time: Math.floor(latest[0] / 1000), open: +latest[1], high: +latest[2], low: +latest[3], close: +latest[4], volume: +latest[5] };
+
+        const candles = candleData[currentTimeframe];
+        if (!candles) return;
+
+        if (candles.length > 0 && candles[candles.length - 1].time === candle.time) {
+          candles[candles.length - 1] = candle;
+        } else {
+          candles.push(candle);
+          if (candles.length > MAX_CANDLES) candles.shift();
+        }
+
+        candleSeries.update(candle);
+        updatePriceDisplay(candle);
+        runAnalysis(currentTimeframe);
+        SignalTracker.updateWithPrice(candle.close);
+        renderTracker();
+        renderMyTrades();
+      } catch (e) { /* ignore */ }
+    }, 3000);
   }
 
   function runAnalysis(tf) {
