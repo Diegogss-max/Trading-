@@ -16,10 +16,54 @@
   const MAX_CANDLES = 500;
 
   function init() {
-    createChart();
-    setupEventListeners();
-    loadAllData();
-    renderTracker();
+    // Loading screen greetings
+    const greetings = [
+      'Bienvenido una vez más, Diego 👑',
+      '¿Listo para ganar dinero, Diego? 💰',
+      'El mercado te espera, Diego 🦁',
+      'Hoy es tu día, Diego 🚀',
+      'A por todas, Diego 🔥',
+      'Los millonarios no descansan, Diego ⚡',
+      'Tu imperio crece, Diego 🏦',
+      'Vamos a cobrar, Diego 💎'
+    ];
+
+    const greetEl = document.getElementById('loadingGreeting');
+    if (greetEl) {
+      greetEl.textContent = greetings[Math.floor(Math.random() * greetings.length)];
+    }
+
+    const statuses = [
+      'Conectando con el mercado...',
+      'Analizando estructura...',
+      'Cargando datos en vivo...',
+      'Preparando señales...',
+      'Todo listo. A operar.'
+    ];
+
+    let statusIdx = 0;
+    const statusEl = document.getElementById('loadingStatus');
+    const statusInterval = setInterval(() => {
+      statusIdx++;
+      if (statusIdx < statuses.length && statusEl) {
+        statusEl.textContent = statuses[statusIdx];
+      } else {
+        clearInterval(statusInterval);
+      }
+    }, 700);
+
+    // Show app after loading
+    setTimeout(() => {
+      const loading = document.getElementById('loadingScreen');
+      const app = document.getElementById('appContainer');
+      if (loading) loading.style.display = 'none';
+      if (app) app.style.display = 'flex';
+      createChart();
+      setupEventListeners();
+      loadAllData();
+      renderTracker();
+      renderMyTrades();
+    }, 4000);
   }
 
   function createChart() {

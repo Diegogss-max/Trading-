@@ -37,6 +37,100 @@ body {
   overflow: hidden;
 }
 
+/* ===== LOADING SCREEN ===== */
+.loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeOut 0.5s ease 3.5s forwards;
+}
+
+.loading-content {
+  text-align: center;
+  animation: scaleIn 0.6s ease;
+}
+
+.loading-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 36px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #ffd700, #fff4a3, #ffd700, #b8860b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.3));
+}
+
+.loading-subtitle {
+  font-size: 12px;
+  color: rgba(255, 215, 0, 0.4);
+  font-style: italic;
+  letter-spacing: 2px;
+  margin-bottom: 40px;
+}
+
+.loading-greeting {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 30px;
+  animation: fadeInUp 0.8s ease 0.3s both;
+}
+
+.loading-bar-container {
+  width: 280px;
+  height: 3px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  margin: 0 auto 16px;
+  overflow: hidden;
+}
+
+.loading-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #ffd700, #ff8c00);
+  border-radius: 3px;
+  animation: loadProgress 3s ease forwards;
+}
+
+.loading-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  animation: fadeInUp 0.8s ease 0.6s both;
+}
+
+@keyframes loadProgress {
+  0% { width: 0%; }
+  30% { width: 40%; }
+  60% { width: 70%; }
+  90% { width: 90%; }
+  100% { width: 100%; }
+}
+
+@keyframes scaleIn {
+  0% { transform: scale(0.9); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeOut {
+  0% { opacity: 1; }
+  100% { opacity: 0; pointer-events: none; }
+}
+
 .app-container {
   display: flex;
   flex-direction: column;
