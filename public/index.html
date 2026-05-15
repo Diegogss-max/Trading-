@@ -45,6 +45,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="btn-guide" id="guideBtn">📖 Guía</button>
         <div class="timeframe-selector" id="timeframeSelector">
           <button data-tf="1m">1m</button>
           <button data-tf="5m">5m</button>
@@ -210,6 +211,66 @@
           </div>
         </div>
       </aside>
+    </div>
+  </div>
+
+  <!-- Guide Modal -->
+  <div class="guide-overlay" id="guideOverlay">
+    <div class="guide-modal">
+      <div class="guide-header">
+        <h2>📖 Guía de Uso — Forbes Secrets</h2>
+        <button class="guide-close" id="guideClose">✕</button>
+      </div>
+      <div class="guide-body">
+        <div class="guide-section">
+          <h3>🎯 Temporalidad Recomendada</h3>
+          <p><b>15 minutos</b> es tu sweet spot. Balance perfecto entre velocidad y precisión. Los Order Blocks y FVGs son respetados, y puedes operar varias veces al día.</p>
+        </div>
+        <div class="guide-section">
+          <h3>⚡ Cómo Operar</h3>
+          <ol>
+            <li>Deja la app en <b>15m</b> para recibir señales</li>
+            <li>Cuando aparezca una señal con <b>confluencia 4+</b> y <b>confirmación de vela</b>, esa es tu entrada</li>
+            <li>Si tiene <b>entrada refinada (LTF)</b>, usa ese precio y SL — mejor R:R</li>
+            <li>Opera solo a favor del <b>Multi-Timeframe</b> — si 4H y 1D apuntan igual, esas señales son oro</li>
+            <li>Presiona <b>"📍 Entré"</b> cuando ejecutes para trackear tu operación</li>
+          </ol>
+        </div>
+        <div class="guide-section">
+          <h3>🚦 Niveles de Confianza</h3>
+          <ul>
+            <li><b style="color:#3fb950">HIGH</b> (6+ confluencias) — Alta probabilidad. Ideal para entrar.</li>
+            <li><b style="color:#d29922">MEDIUM</b> (4-5 confluencias) — Buena señal, entra con precaución.</li>
+            <li><b style="color:#484f58">LOW</b> (3 confluencias) — Mínimo requerido. Mejor esperar o dejar pasar.</li>
+          </ul>
+        </div>
+        <div class="guide-section">
+          <h3>✅ / ⛔ Factibilidad</h3>
+          <p><b>✅ ENTRAR</b> — El precio aún permite buena entrada (R:R favorable).</p>
+          <p><b>⛔ NO ENTRAR</b> — Ya no conviene (precio cerca del TP, SL, o R:R malo).</p>
+        </div>
+        <div class="guide-section">
+          <h3>📊 Qué Significan las Líneas</h3>
+          <ul>
+            <li><b style="color:#00e676">━━ OB Bull</b> — Order Block alcista. Zona de compra institucional.</li>
+            <li><b style="color:#ff1744">━━ OB Bear</b> — Order Block bajista. Zona de venta institucional.</li>
+            <li><b style="color:#ce93d8">┄┄ FVG Bull</b> — Fair Value Gap alcista. Imbalance que el precio tiende a llenar.</li>
+            <li><b style="color:#ffb74d">┄┄ FVG Bear</b> — Fair Value Gap bajista.</li>
+            <li><b style="color:#ffd600">··· LIQ</b> — Zona de liquidez. Donde están los stop losses del mercado.</li>
+            <li><b style="color:#90a4ae">── EQ</b> — Equilibrio (50% del rango). Arriba = Premium, Abajo = Discount.</li>
+          </ul>
+        </div>
+        <div class="guide-section">
+          <h3>🧠 Reglas de Oro</h3>
+          <ul>
+            <li>Nunca operes contra la tendencia de 4H y 1D</li>
+            <li>Espera confirmación de vela antes de entrar</li>
+            <li>Respeta siempre tu Stop Loss</li>
+            <li>Solo opera durante Killzones (London Open, NY Open)</li>
+            <li>Si no hay señal clara, no operes. La paciencia paga.</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
 

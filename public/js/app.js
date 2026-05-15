@@ -442,6 +442,19 @@
       document.getElementById('panelToggle').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
       setTimeout(() => chart.applyOptions({ width: document.getElementById('chartContainer').clientWidth }), 350);
     });
+
+    // Guide modal
+    document.getElementById('guideBtn').addEventListener('click', () => {
+      document.getElementById('guideOverlay').classList.add('visible');
+    });
+    document.getElementById('guideClose').addEventListener('click', () => {
+      document.getElementById('guideOverlay').classList.remove('visible');
+    });
+    document.getElementById('guideOverlay').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) {
+        document.getElementById('guideOverlay').classList.remove('visible');
+      }
+    });
   }
 
   function fp(price) { return price ? Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'; }
