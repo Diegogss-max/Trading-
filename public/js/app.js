@@ -456,7 +456,18 @@
     document.getElementById('panelToggle').addEventListener('click', () => {
       const sb = document.getElementById('panelSidebar');
       sb.classList.toggle('collapsed');
-      document.getElementById('panelToggle').textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+      const btn = document.getElementById('panelToggle');
+      btn.textContent = sb.classList.contains('collapsed') ? '▶' : '◀';
+      document.getElementById('panelOpenBtn').classList.toggle('visible', sb.classList.contains('collapsed'));
+      setTimeout(() => chart.applyOptions({ width: document.getElementById('chartContainer').clientWidth }), 350);
+    });
+
+    // Floating open button when panel is collapsed
+    document.getElementById('panelOpenBtn').addEventListener('click', () => {
+      const sb = document.getElementById('panelSidebar');
+      sb.classList.remove('collapsed');
+      document.getElementById('panelToggle').textContent = '◀';
+      document.getElementById('panelOpenBtn').classList.remove('visible');
       setTimeout(() => chart.applyOptions({ width: document.getElementById('chartContainer').clientWidth }), 350);
     });
 
