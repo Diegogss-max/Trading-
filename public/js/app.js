@@ -147,6 +147,11 @@
         runAnalysis(tf);
       }
 
+      // Always run 15m analysis for signal generation (priority TF)
+      if (tf !== currentTimeframe && tf === '15m') {
+        runAnalysis('15m');
+      }
+
       SignalTracker.updateWithPrice(candle.close);
       renderTracker();
       renderMyTrades();
@@ -365,8 +370,14 @@
     document.getElementById('simLosses').textContent = myStats.losses;
     document.getElementById('simActive').textContent = MyTrades.getOpen().length;
 
-    // Active signals with feasibility (newest first)
-    const active = [...SignalTracker.getActive()].sort((a, b) => b.createdAt - a.createdAt);
+    // Active signals with feasibility (newest first, 15m prioritized)
+    const active = [...SignalTracker.getActive()].sort((a, b) => {
+      // 15m signals always on top
+      if (a.timeframe === '15m' && b.timeframe !== '15m') return -1;
+      if (b.timeframe === '15m' && a.timeframe !== '15m') return 1;
+      // Then by creation time (newest first)
+      return b.createdAt - a.createdAt;
+    });
     const sc = document.getElementById('signalsList');
     if (active.length === 0) {
       sc.innerHTML = '<div class="no-signals">Sin señales activas</div>';
