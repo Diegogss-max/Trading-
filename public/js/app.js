@@ -365,8 +365,8 @@
     document.getElementById('simLosses').textContent = myStats.losses;
     document.getElementById('simActive').textContent = MyTrades.getOpen().length;
 
-    // Active signals with feasibility
-    const active = SignalTracker.getActive();
+    // Active signals with feasibility (newest first)
+    const active = [...SignalTracker.getActive()].sort((a, b) => b.createdAt - a.createdAt);
     const sc = document.getElementById('signalsList');
     if (active.length === 0) {
       sc.innerHTML = '<div class="no-signals">Sin señales activas</div>';
