@@ -540,7 +540,17 @@
     '⚡ Un millonario no nace, se construye operación tras operación.',
     '🏆 El 1% no duda. Analiza, ejecuta y cobra. Ese eres tú.',
     '🌟 Tu cuenta bancaria es un reflejo de tu mentalidad. Piensa en grande.',
-    '🦈 Los tiburones no miran atrás. Siguiente trade, siguiente victoria.'
+    '🦈 Los tiburones no miran atrás. Siguiente trade, siguiente victoria.',
+    '🏦 Mientras otros duermen, tú construyes un imperio. No pares.',
+    '💵 El dinero fluye hacia quien tiene la disciplina de esperarlo.',
+    '🎯 Precisión sobre cantidad. Un buen trade vale más que cien malos.',
+    '🧠 Tu mente es tu mejor activo. Entrénala como un atleta de élite.',
+    '🌊 Las olas del mercado no te tumban, te elevan. Surfea con confianza.',
+    '🔑 La clave no es cuánto ganas, es cuánto conservas. Gestiona el riesgo.',
+    '💪 Los perdedores buscan excusas. Los ganadores buscan entradas. Tú ganas.',
+    '🏔️ La cima es solitaria, pero la vista es millonaria. Sigue subiendo.',
+    '⭐ Hoy es el día que tu futuro yo te agradecerá. Opera con convicción.',
+    '🐺 No sigues al rebaño. Tú eres el que mueve el mercado.'
   ];
 
   function rotatePhrase() {
