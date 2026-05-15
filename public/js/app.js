@@ -583,5 +583,31 @@
   // Update my trades PnL periodically
   setInterval(renderMyTrades, 3000);
 
+  // Motivational phrases
+  const PHRASES = [
+    '💎 El mercado recompensa a los pacientes. Tu momento es ahora.',
+    '🦁 Piensa como millonario, opera como millonario, SÉ millonario.',
+    '🚀 Cada operación ganadora te acerca más a tu libertad financiera.',
+    '👑 Los ricos no trabajan por dinero. El dinero trabaja para ellos.',
+    '🔥 La disciplina de hoy es la riqueza de mañana. Sigue el plan.',
+    '💰 No estás aquí por suerte. Estás aquí porque eres imparable.',
+    '⚡ Un millonario no nace, se construye operación tras operación.',
+    '🏆 El 1% no duda. Analiza, ejecuta y cobra. Ese eres tú.',
+    '🌟 Tu cuenta bancaria es un reflejo de tu mentalidad. Piensa en grande.',
+    '🦈 Los tiburones no miran atrás. Siguiente trade, siguiente victoria.'
+  ];
+
+  function rotatePhrase() {
+    const el = document.getElementById('motivText');
+    if (!el) return;
+    const phrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+    el.style.animation = 'none';
+    el.offsetHeight; // trigger reflow
+    el.style.animation = 'fadeMotiv 1s ease';
+    el.textContent = phrase;
+  }
+
+  setInterval(rotatePhrase, 15000); // Change every 15 seconds
+
   document.addEventListener('DOMContentLoaded', init);
 })();

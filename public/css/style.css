@@ -62,12 +62,20 @@ body {
 }
 
 .header-left h1 {
-  font-size: 17px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  font-size: 15px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffd700, #ff8c00, #ffd700);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  letter-spacing: -0.3px;
+}
+
+.made-by {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: -8px;
 }
 
 .pair-badge {
@@ -195,6 +203,27 @@ body {
 }
 
 /* ===== MAIN CONTENT ===== */
+.motivational-bar {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.05), rgba(255, 140, 0, 0.08), rgba(255, 215, 0, 0.05));
+  border-bottom: 1px solid rgba(255, 215, 0, 0.1);
+  padding: 6px 20px;
+  text-align: center;
+  overflow: hidden;
+}
+
+.motiv-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffd700;
+  letter-spacing: 0.3px;
+  animation: fadeMotiv 1s ease;
+}
+
+@keyframes fadeMotiv {
+  0% { opacity: 0; transform: translateY(-5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 .main-content {
   display: flex;
   flex: 1;
