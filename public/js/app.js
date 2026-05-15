@@ -315,11 +315,11 @@
   }
 
   function renderTracker() {
-    const stats = SignalTracker.getStats();
-    document.getElementById('simWinRate').textContent = stats.winRate;
-    document.getElementById('simWins').textContent = stats.wins;
-    document.getElementById('simLosses').textContent = stats.losses;
-    document.getElementById('simActive').textContent = stats.active;
+    const myStats = MyTrades.getStats();
+    document.getElementById('simWinRate').textContent = myStats.winRate;
+    document.getElementById('simWins').textContent = myStats.wins;
+    document.getElementById('simLosses').textContent = myStats.losses;
+    document.getElementById('simActive').textContent = MyTrades.getOpen().length;
 
     // Active signals with feasibility
     const active = SignalTracker.getActive();
@@ -370,60 +370,6 @@
       }).join('');
     }
 
-    // History
-    const history = SignalTracker.getHistory(20);
-    const hc = document.getElementById('tradesHistory');
-    if (history.length === 0) {
-      hc.innerHTML = '<div class="no-signals">Sin historial</div>';
-    } else {
-      // Stats summary
-      const hStats = SignalTracker.getStats();
-      const statsHtml = `<div class="history-stats-bar">
-        <span class="hs-item">Total: <b>${hStats.total}</b></span>
-        <span class="hs-item win">✅ TP: <b>${hStats.wins}</b></span>
-        <span class="hs-item loss">❌ SL: <b>${hStats.losses}</b></span>
-        <span class="hs-item">⏰ Exp: <b>${hStats.expired}</b></span>
-        <span class="hs-item">WR: <b>${hStats.winRate}</b></span>
-      </div>`;
-
-      hc.innerHTML = statsHtml + history.map(s => {
-        const time = new Date(s.closedAt).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        const duration = Math.floor((s.closedAt - s.createdAt) / 60000);
-        const durationStr = duration < 60 ? `${duration}m` : `${Math.floor(duration / 60)}h ${duration % 60}m`;
-
-        let resultBadge, resultClass;
-        if (s.result === 'win') {
-          resultBadge = '✅ TP CUMPLIDO';
-          resultClass = 'result-win';
-        } else if (s.result === 'loss') {
-          resultBadge = '❌ SL TOCADO';
-          resultClass = 'result-loss';
-        } else {
-          resultBadge = '⏰ EXPIRADA';
-          resultClass = 'result-expired';
-        }
-
-        return `
-          <div class="history-item ${s.type} ${s.result}">
-            <div class="history-item-header">
-              <span class="history-type ${s.type}">${s.type === 'long' ? '↑ LONG' : '↓ SHORT'}</span>
-              <span class="history-time">${time}</span>
-            </div>
-            <div class="history-result-badge ${resultClass}">${resultBadge}</div>
-            <div class="history-risk">
-              <div class="history-risk-item"><span class="history-risk-label">Entrada</span><span class="history-risk-value">${fp(s.entry)}</span></div>
-              <div class="history-risk-item"><span class="history-risk-label">Cierre</span><span class="history-risk-value">${fp(s.closePrice)}</span></div>
-              <div class="history-risk-item"><span class="history-risk-label">Resultado</span><span class="history-risk-value" style="color:${parseFloat(s.pnlPercent) >= 0 ? '#26a69a' : '#ef5350'}">${s.pnlPercent}%</span></div>
-              <div class="history-risk-item"><span class="history-risk-label">Duración</span><span class="history-risk-value">${durationStr}</span></div>
-            </div>
-            <div class="history-targets">
-              <span class="ht-tp">TP: ${fp(s.tp)} ${s.result === 'win' ? '✓' : '✗'}</span>
-              <span class="ht-sl">SL: ${fp(s.sl)} ${s.result === 'loss' ? '✓' : '✗'}</span>
-              <span class="ht-rr">R:R 1:${s.rr}</span>
-            </div>
-          </div>`;
-      }).join('');
-    }
   }
 
   function updatePriceDisplay(candle) {

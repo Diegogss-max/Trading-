@@ -17,7 +17,7 @@
     <header class="app-header">
       <div class="header-left">
         <h1>Millionaires Analysis Secrets</h1>
-        <span class="made-by">by Diego S.</span>
+        <span class="made-by">Made by Saldaño</span>
         <span class="pair-badge">BTC/USDT</span>
         <span class="price-display" id="currentPrice">--</span>
         <span class="price-change" id="priceChange">--</span>
@@ -56,10 +56,10 @@
           <button class="panel-toggle" id="panelToggle">◀</button>
         </div>
 
-        <!-- Signal Stats -->
+        <!-- My Trading Stats -->
         <div class="panel-section simulator-section">
-          <h3>📊 Rendimiento de Señales</h3>
-          <div class="sim-stats-grid">
+          <h3>📊 Mis Estadísticas</h3>
+          <div class="sim-stats-grid" id="myStatsGrid">
             <div class="sim-stat">
               <span class="sim-stat-value" id="simWinRate">0%</span>
               <span class="sim-stat-label">Win Rate</span>
@@ -74,7 +74,7 @@
             </div>
             <div class="sim-stat">
               <span class="sim-stat-value" id="simActive">0</span>
-              <span class="sim-stat-label">Activas</span>
+              <span class="sim-stat-label">Abiertas</span>
             </div>
           </div>
         </div>
@@ -84,14 +84,6 @@
           <h3>🎯 Señales Activas</h3>
           <div class="signals-list" id="signalsList">
             <div class="no-signals">Sin señales activas</div>
-          </div>
-        </div>
-
-        <!-- Signal History -->
-        <div class="panel-section">
-          <h3>📜 Historial de Señales</h3>
-          <div class="history-list" id="tradesHistory">
-            <div class="no-signals">Sin historial</div>
           </div>
         </div>
 
