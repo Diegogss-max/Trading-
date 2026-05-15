@@ -666,6 +666,306 @@ const SMC = (function () {
     };
   }
 
+  // ===== ICT ENGINE (Fede Esses Style) =====
+
+  // NY Time Engine - converts current time to New York timezone
+  function getNYTime() {
+    const now = new Date();
+    const nyString = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const ny = new Date(nyString);
+    return { hours: ny.getHours(), minutes: ny.getMinutes(), full: ny };
+  }
+
+  // ICT Killzones in NY Time
+  function getICTKillzone() {
+    const { hours, minutes } = getNYTime();
+    const timeDecimal = hours + minutes / 60;
+
+    let killzone = null;
+    let isActive = false;
+
+    if (timeDecimal >= 2 && timeDecimal < 5) {
+      killzone = 'London Open KZ (02:00-05:00 NY)';
+      isActive = true;
+    } else if (timeDecimal >= 8.5 && timeDecimal < 11) {
+      killzone = 'NY Open KZ (08:30-11:00 NY)';
+      isActive = true;
+    } else if (timeDecimal >= 10 && timeDecimal < 11) {
+      killzone = 'Silver Bullet AM (10:00-11:00 NY)';
+      isActive = true;
+    }
+
+    return { killzone, isActive, nyHours: hours, nyMinutes: minutes };
+  }
+
+  // Midnight Open Price (PO3 - Power of 3)
+  function getMidnightOpenPrice(candles) {
+    if (!candles || candles.length === 0) return null;
+
+    const { full: nyNow } = getNYTime();
+    // Find midnight NY of today
+    const midnightNY = new Date(nyNow);
+    midnightNY.setHours(0, 0, 0, 0);
+    const midnightTimestamp = Math.floor(midnightNY.getTime() / 1000);
+
+    // Find the candle closest to midnight NY
+    let closestCandle = null;
+    let closestDiff = Infinity;
+
+    for (const c of candles) {
+      const diff = Math.abs(c.time - midnightTimestamp);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closestCandle = c;
+      }
+    }
+
+    // Only valid if within 15 minutes of midnight
+    if (closestCandle && closestDiff < 900) {
+      return closestCandle.open;
+    }
+
+    // Fallback: use the first candle of the day
+    for (const c of candles) {
+      if (c.time >= midnightTimestamp) return c.open;
+    }
+
+    return null;
+  }
+
+  // Detect Inversion Fair Value Gaps (IFVG)
+  // An IFVG occurs when price closes through a FVG with body, inverting its role
+  function detectIFVG(candles, fvgs) {
+    const ifvgs = [];
+
+    for (const fvg of fvgs) {
+      // Check if any recent candle closed through the FVG with body
+      for (let i = fvg.index + 3; i < candles.length; i++) {
+        const c = candles[i];
+
+        if (fvg.type === 'fvg_bearish') {
+          // Bearish FVG becomes bullish IFVG when price closes ABOVE it with body
+          if (c.close > fvg.top && c.open < fvg.top) {
+            // Now it's an IFVG Bull - acts as support on retest
+            const retested = isIFVGRetested(candles, i, fvg.top, fvg.bottom, 'bull');
+            ifvgs.push({
+              type: 'ifvg_bull',
+              top: fvg.top,
+              bottom: fvg.bottom,
+              inversionIndex: i,
+              inversionTime: c.time,
+              retested,
+              originalType: 'fvg_bearish'
+            });
+            break;
+          }
+        }
+
+        if (fvg.type === 'fvg_bullish') {
+          // Bullish FVG becomes bearish IFVG when price closes BELOW it with body
+          if (c.close < fvg.bottom && c.open > fvg.bottom) {
+            const retested = isIFVGRetested(candles, i, fvg.top, fvg.bottom, 'bear');
+            ifvgs.push({
+              type: 'ifvg_bear',
+              top: fvg.top,
+              bottom: fvg.bottom,
+              inversionIndex: i,
+              inversionTime: c.time,
+              retested,
+              originalType: 'fvg_bullish'
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    return ifvgs;
+  }
+
+  function isIFVGRetested(candles, fromIndex, top, bottom, type) {
+    for (let i = fromIndex + 1; i < candles.length; i++) {
+      if (type === 'bull') {
+        // Price comes back down to the IFVG zone (retest as support)
+        if (candles[i].low <= top && candles[i].close > bottom) {
+          return { retested: true, index: i, time: candles[i].time };
+        }
+      } else {
+        // Price comes back up to the IFVG zone (retest as resistance)
+        if (candles[i].high >= bottom && candles[i].close < top) {
+          return { retested: true, index: i, time: candles[i].time };
+        }
+      }
+    }
+    return { retested: false };
+  }
+
+  // MSS (Market Structure Shift) detection on LTF
+  function detectMSS(candles, direction) {
+    if (!candles || candles.length < 30) return false;
+
+    const structure = analyzeStructure(candles.slice(-50));
+
+    if (direction === 'long') {
+      // Need a bullish CHoCH or BOS in last 10 candles
+      const recentBullish = [...structure.choch, ...structure.bos]
+        .filter(b => b.type.includes('bullish') && b.index > candles.length - 15);
+      return recentBullish.length > 0;
+    } else {
+      const recentBearish = [...structure.choch, ...structure.bos]
+        .filter(b => b.type.includes('bearish') && b.index > candles.length - 15);
+      return recentBearish.length > 0;
+    }
+  }
+
+  // ICT Signal Filter - wraps existing generateSignals with ICT conditions
+  function generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, ltfCandles) {
+    const ictKZ = getICTKillzone();
+
+    // If outside killzone, return empty with status message
+    if (!ictKZ.isActive) {
+      return { signals: [], outsideKZ: true, killzoneStatus: 'Fuera de horario operativo (Esperando Killzone)', nextKZ: getNextKillzone() };
+    }
+
+    // Get base signals from existing logic
+    const baseSignals = generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend);
+
+    // Detect IFVGs
+    const allFVGs = detectFVG(candles);
+    const ifvgs = detectIFVG(candles, allFVGs);
+
+    // Get Midnight Open Price for PO3
+    const midnightOpen = getMidnightOpenPrice(candles);
+    const currentPrice = candles[candles.length - 1].close;
+
+    // Determine daily bias from PO3
+    let dailyBias = 'neutral';
+    if (midnightOpen) {
+      if (htfTrend === 'bullish' && currentPrice < midnightOpen) dailyBias = 'long_accumulation';
+      else if (htfTrend === 'bearish' && currentPrice > midnightOpen) dailyBias = 'short_distribution';
+      else if (currentPrice > midnightOpen) dailyBias = 'above_midnight';
+      else dailyBias = 'below_midnight';
+    }
+
+    // Filter and enhance signals with ICT conditions
+    const ictSignals = [];
+
+    for (const signal of baseSignals) {
+      let ictScore = 0;
+      const ictDetails = [...(signal.confluences || [])];
+
+      // ICT Killzone bonus
+      ictScore += 1;
+      ictDetails.push(`⏰ ${ictKZ.killzone}`);
+
+      // PO3 alignment
+      if (signal.type === 'long' && (dailyBias === 'long_accumulation' || dailyBias === 'below_midnight')) {
+        ictScore += 1;
+        ictDetails.push('PO3: Bajo Midnight Open (Acumulación)');
+      } else if (signal.type === 'short' && (dailyBias === 'short_distribution' || dailyBias === 'above_midnight')) {
+        ictScore += 1;
+        ictDetails.push('PO3: Sobre Midnight Open (Distribución)');
+      }
+
+      // IFVG check
+      const relevantIFVG = ifvgs.find(ifvg => {
+        if (signal.type === 'long' && ifvg.type === 'ifvg_bull') {
+          return currentPrice >= ifvg.bottom && currentPrice <= ifvg.top * 1.002;
+        }
+        if (signal.type === 'short' && ifvg.type === 'ifvg_bear') {
+          return currentPrice <= ifvg.top && currentPrice >= ifvg.bottom * 0.998;
+        }
+        return false;
+      });
+
+      if (relevantIFVG) {
+        ictScore += 2;
+        ictDetails.push('IFVG presente (Inversión confirmada)');
+      }
+
+      // MSS on LTF
+      if (ltfCandles && ltfCandles.length > 30) {
+        const hasMSS = detectMSS(ltfCandles, signal.type);
+        if (hasMSS) {
+          ictScore += 1;
+          ictDetails.push('MSS confirmado en LTF');
+        }
+      }
+
+      // Only pass signals with enough ICT confluence
+      const totalScore = (parseInt(signal.rr) >= 2 ? 1 : 0) + ictScore;
+
+      if (totalScore >= 2) {
+        ictSignals.push({
+          ...signal,
+          ictScore,
+          confluences: ictDetails,
+          confidence: ictScore >= 4 ? 'high' : ictScore >= 2 ? 'medium' : 'low',
+          midnightOpen,
+          dailyBias,
+          hasIFVG: !!relevantIFVG,
+          reason: buildICTReason(signal, ictDetails, ictKZ, dailyBias, midnightOpen, relevantIFVG)
+        });
+      }
+    }
+
+    // Also generate IFVG-specific signals (retest entries)
+    for (const ifvg of ifvgs) {
+      if (ifvg.retested && ifvg.retested.retested) {
+        const isRecent = ifvg.retested.index > candles.length - 5;
+        if (!isRecent) continue;
+
+        if (ifvg.type === 'ifvg_bull' && currentPrice >= ifvg.bottom && currentPrice <= ifvg.top * 1.003) {
+          const sl = ifvg.bottom - (ifvg.top - ifvg.bottom) * 0.5;
+          const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
+          const rr = calcRR(currentPrice, sl, tp);
+          if (rr >= 1.0) {
+            ictSignals.push({
+              type: 'long', entry: currentPrice, sl, tp, rr: rr.toFixed(2),
+              confidence: 'high', time: candles[candles.length - 1].time,
+              ictScore: 5, hasIFVG: true, midnightOpen, dailyBias,
+              confluences: ['IFVG Bull Retest', `⏰ ${ictKZ.killzone}`, 'Inversión confirmada'],
+              reason: `Long: IFVG Bull en retest (${ifvg.bottom.toFixed(0)}-${ifvg.top.toFixed(0)}). FVG bajista invertido a soporte. ${ictKZ.killzone}. PO3 bias: ${dailyBias}.`
+            });
+          }
+        }
+
+        if (ifvg.type === 'ifvg_bear' && currentPrice <= ifvg.top && currentPrice >= ifvg.bottom * 0.997) {
+          const sl = ifvg.top + (ifvg.top - ifvg.bottom) * 0.5;
+          const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
+          const rr = calcRR(currentPrice, sl, tp);
+          if (rr >= 1.0) {
+            ictSignals.push({
+              type: 'short', entry: currentPrice, sl, tp, rr: rr.toFixed(2),
+              confidence: 'high', time: candles[candles.length - 1].time,
+              ictScore: 5, hasIFVG: true, midnightOpen, dailyBias,
+              confluences: ['IFVG Bear Retest', `⏰ ${ictKZ.killzone}`, 'Inversión confirmada'],
+              reason: `Short: IFVG Bear en retest (${ifvg.bottom.toFixed(0)}-${ifvg.top.toFixed(0)}). FVG alcista invertido a resistencia. ${ictKZ.killzone}. PO3 bias: ${dailyBias}.`
+            });
+          }
+        }
+      }
+    }
+
+    return { signals: dedup(ictSignals), outsideKZ: false, killzoneStatus: ictKZ.killzone, midnightOpen, dailyBias };
+  }
+
+  function buildICTReason(signal, details, ictKZ, dailyBias, midnightOpen, ifvg) {
+    let reason = signal.reason || '';
+    reason += ` | ICT: ${details.join(' • ')}`;
+    if (midnightOpen) reason += ` | MO: ${midnightOpen.toFixed(0)}`;
+    return reason;
+  }
+
+  function getNextKillzone() {
+    const { hours, minutes } = getNYTime();
+    const t = hours + minutes / 60;
+    if (t < 2) return 'London Open en ' + Math.floor((2 - t) * 60) + 'min';
+    if (t >= 5 && t < 8.5) return 'NY Open en ' + Math.floor((8.5 - t) * 60) + 'min';
+    if (t >= 11) return 'London Open mañana';
+    return '';
+  }
+
   // ===== PUBLIC API =====
   return {
     analyzeStructure,
@@ -674,6 +974,10 @@ const SMC = (function () {
     detectLiquidity,
     calculatePremiumDiscount,
     generateSignals,
+    generateICTSignals,
+    detectIFVG,
+    getICTKillzone,
+    getMidnightOpenPrice,
     analyzeVolume,
     getCurrentSession,
     refineEntry

@@ -220,11 +220,16 @@
     const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
     const htfTrend = t4h === t1d ? t4h : t4h;
 
-    const signals = SMC.generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend);
+    const signals = SMC.generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, candleData['5m'] || candleData['1m']);
 
-    // Refine entries using lower timeframe
+    // If outside killzone, show status message
+    if (signals.outsideKZ) {
+      const sc = document.getElementById('signalsList');
+      sc.innerHTML = `<div class="no-signals" style="color:#d29922">⏰ ${signals.killzoneStatus}<br><small style="color:#484f58">${signals.nextKZ || ''}</small></div>`;
+    }
+
     const refinedSignals = [];
-    for (const signal of signals) {
+    for (const signal of (signals.signals || [])) {
       // Try to refine with 5m first, then 1m
       let refined = null;
       if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
@@ -256,7 +261,7 @@
     }
 
     drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
-    updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend);
+    updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, signals);
   }
 
   function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
@@ -313,7 +318,7 @@
     drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [] };
   }
 
-  function updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend) {
+  function updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend, ictData) {
     // MTF
     for (const tf of TIMEFRAMES) {
       const el = document.getElementById(`mtf-${tf}`);
@@ -338,15 +343,16 @@
       document.getElementById('sellPercent').textContent = `${volume.pressure.sellPercent}%`;
     }
 
-    // Session
+    // Session - use ICT killzone
     if (session) {
+      const ictKZ = SMC.getICTKillzone();
       document.getElementById('sessionLabel').textContent = session.sessionLabel;
-      document.getElementById('sessionDot').className = `session-dot ${session.isKillzoneActive ? 'active' : ''}`;
-      document.getElementById('killzoneLabel').textContent = session.isKillzoneActive ? session.killzoneLabel : 'Sin Killzone';
-      document.getElementById('killzoneBadge').className = `killzone-badge ${session.isKillzoneActive ? 'active' : ''}`;
+      document.getElementById('sessionDot').className = `session-dot ${ictKZ.isActive ? 'active' : ''}`;
+      document.getElementById('killzoneLabel').textContent = ictKZ.isActive ? ictKZ.killzone : 'Sin Killzone';
+      document.getElementById('killzoneBadge').className = `killzone-badge ${ictKZ.isActive ? 'active' : ''}`;
       document.getElementById('ctxSession').textContent = session.sessionLabel;
-      document.getElementById('ctxKillzone').textContent = session.isKillzoneActive ? session.killzoneLabel : 'Ninguna';
-      document.getElementById('ctxKillzone').style.color = session.isKillzoneActive ? '#ff9800' : '#787b86';
+      document.getElementById('ctxKillzone').textContent = ictKZ.isActive ? ictKZ.killzone : (ictData && ictData.killzoneStatus ? ictData.killzoneStatus : 'Ninguna');
+      document.getElementById('ctxKillzone').style.color = ictKZ.isActive ? '#d29922' : '#484f58';
     }
 
     // P/D
