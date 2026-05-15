@@ -327,6 +327,7 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .chart-container {
@@ -388,7 +389,7 @@ body {
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 50;
+  z-index: 999;
   background: var(--bg-secondary);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
