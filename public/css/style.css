@@ -62,20 +62,25 @@ body {
 }
 
 .header-left h1 {
-  font-size: 15px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #ffd700, #ff8c00, #ffd700);
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 900;
+  background: linear-gradient(135deg, #ffd700, #fff4a3, #ffd700, #b8860b);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: -0.3px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.15));
 }
 
 .made-by {
   font-size: 10px;
-  color: var(--text-muted);
+  color: rgba(255, 215, 0, 0.5);
   font-style: italic;
   margin-left: -8px;
+  font-weight: 500;
+  letter-spacing: 1px;
 }
 
 .pair-badge {
