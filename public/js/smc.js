@@ -215,7 +215,7 @@ const SMC = (function () {
 
   // ===== SIGNALS (ICT Enhanced) =====
   // Config
-  const SIGNAL_CONFIG = { MIN_RR: 2.5, STRICT_KZ: true, MIN_CONF: 3 };
+  var SIGNAL_CONFIG = { MIN_RR: 2.5, STRICT_KZ: true, MIN_CONF: 3 };
 
   function generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend) {
     const signals = [];
@@ -381,6 +381,20 @@ const SMC = (function () {
     const risk = Math.abs(entry - sl);
     const reward = Math.abs(tp - entry);
     return risk > 0 ? reward / risk : 0;
+  }
+
+  function checkLiquiditySwept(dir, liquidity, candles) {
+    const recent = candles.slice(-10);
+    if (dir === 'long') {
+      for (const liq of liquidity.filter(l => l.type.includes('low'))) {
+        for (const c of recent) { if (c.low < liq.price && c.close > liq.price) return true; }
+      }
+    } else {
+      for (const liq of liquidity.filter(l => l.type.includes('high'))) {
+        for (const c of recent) { if (c.high > liq.price && c.close < liq.price) return true; }
+      }
+    }
+    return false;
   }
 
   function findSwingLow(candles, n) { let low = candles[candles.length - 1].low; for (let i = candles.length - n; i < candles.length; i++) { if (candles[i].low < low) low = candles[i].low; } return low; }

@@ -205,65 +205,64 @@
   }
 
   function runAnalysis(tf) {
-    const candles = candleData[tf];
-    if (!candles || candles.length < 50) return;
+    try {
+      const candles = candleData[tf];
+      if (!candles || candles.length < 50) return;
 
-    const structure = SMC.analyzeStructure(candles);
-    const obs = SMC.detectOrderBlocks(candles, structure);
-    const fvgs = SMC.detectFVG(candles);
-    const liquidity = SMC.detectLiquidity(candles, structure);
-    const pd = SMC.calculatePremiumDiscount(candles, structure);
-    const volume = SMC.analyzeVolume(candles);
-    const session = SMC.getCurrentSession();
+      const structure = SMC.analyzeStructure(candles);
+      const obs = SMC.detectOrderBlocks(candles, structure);
+      const fvgs = SMC.detectFVG(candles);
+      const liquidity = SMC.detectLiquidity(candles, structure);
+      const pd = SMC.calculatePremiumDiscount(candles, structure);
+      const volume = SMC.analyzeVolume(candles);
+      const session = SMC.getCurrentSession();
 
-    const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
-    const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
-    const htfTrend = t4h === t1d ? t4h : t4h;
+      const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
+      const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
+      const htfTrend = t4h === t1d ? t4h : t4h;
 
-    const signals = SMC.generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, candleData['5m'] || candleData['1m']);
+      // Use generateICTSignals — wraps generateSignals with ICT filters
+      let ictResult = { signals: [], outsideKZ: false, killzoneStatus: '', nextKZ: '' };
+      try {
+        ictResult = SMC.generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, candleData['5m'] || candleData['1m']);
+      } catch(e) {
+        console.warn('ICT signals error:', e.message);
+      }
 
-    // If outside killzone, show status message
-    if (signals.outsideKZ) {
-      const sc = document.getElementById('signalsList');
-      sc.innerHTML = `<div class="no-signals" style="color:#d29922">⏰ ${signals.killzoneStatus}<br><small style="color:#484f58">${signals.nextKZ || ''}</small></div>`;
+      // Show killzone status if outside
+      if (ictResult.outsideKZ) {
+        const sc = document.getElementById('signalsList');
+        if (sc) sc.innerHTML = `<div class="no-signals" style="color:#d29922">⏰ ${ictResult.killzoneStatus}<br><small style="color:#484f58">${ictResult.nextKZ || ''}</small></div>`;
+      }
+
+      const refinedSignals = [];
+      for (const signal of (ictResult.signals || [])) {
+        let refined = null;
+        if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
+          try { refined = SMC.refineEntry(signal, candleData['5m']); } catch(e) {}
+        }
+        if (!refined && tf !== '1m' && candleData['1m'] && candleData['1m'].length > 50) {
+          try { refined = SMC.refineEntry(signal, candleData['1m']); } catch(e) {}
+        }
+        refinedSignals.push({ ...signal, refined, hasRefinedEntry: !!refined });
+      }
+
+      // Track new signals
+      const now = Date.now();
+      if (refinedSignals.length > 0 && now - lastSignalTime > 30000) {
+        for (const s of refinedSignals) {
+          SignalTracker.addSignal({ ...s, timeframe: tf });
+        }
+        lastSignalTime = now;
+        renderTracker();
+      }
+
+      drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
+      updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, ictResult);
+    } catch(e) {
+      console.error('runAnalysis error:', e.message);
     }
-
-    const refinedSignals = [];
-    for (const signal of (signals.signals || [])) {
-      // Try to refine with 5m first, then 1m
-      let refined = null;
-      if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
-        refined = SMC.refineEntry(signal, candleData['5m']);
-      }
-      if (!refined && tf !== '1m' && candleData['1m'] && candleData['1m'].length > 50) {
-        refined = SMC.refineEntry(signal, candleData['1m']);
-      }
-
-      if (refined) {
-        refinedSignals.push({
-          ...signal,
-          refined: refined,
-          hasRefinedEntry: true
-        });
-      } else {
-        refinedSignals.push({ ...signal, hasRefinedEntry: false });
-      }
-    }
-
-    // Track new signals
-    const now = Date.now();
-    if (refinedSignals.length > 0 && now - lastSignalTime > 30000) {
-      for (const s of refinedSignals) {
-        SignalTracker.addSignal({ ...s, timeframe: tf });
-      }
-      lastSignalTime = now;
-      renderTracker();
-    }
-
-    drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
-    updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, signals);
   }
-
   function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
     markers = [];
     clearDrawnObjects();
