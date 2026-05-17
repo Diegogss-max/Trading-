@@ -1,325 +1,255 @@
 /**
- * Signal Generator
- * Combines all SMC concepts to generate trade signals
- * More aggressive detection: proximity to zones, multiple triggers, lower R:R threshold
+ * Signal Generator — ICT/SMC Enhanced
+ * Changes:
+ * 1. RR minimum raised to 2.5
+ * 2. Strict killzone filter
+ * 3. ICT-correct OB definition (body only)
+ * 4. HTF alignment mandatory for medium/high confidence
+ * 5. Hard minimum 3 confluences
+ * 6. TP uses second target (higher RR)
+ * 7. Candle close filter (use penultimate candle)
+ * 8. Backtesting metadata on every signal
  */
+
+// ===== CONFIG =====
+const CONFIG = {
+  MIN_RR: 2.5,
+  STRICT_KILLZONE_FILTER: true,
+  MIN_CONFLUENCES: 3
+};
 
 function generateSignals(candles, context) {
   const { structure, obs, fvgs, liquidity, pd, htfAnalysis, timeframe, session, volume } = context;
-  const signals = [];
-  const currentPrice = candles[candles.length - 1].close;
-  const currentCandle = candles[candles.length - 1];
-  const prevCandle = candles[candles.length - 2];
 
-  // Get HTF trend for confluence
+  // Use penultimate candle (closed) not the forming one
+  const signalCandle = candles[candles.length - 2];
+  const currentPrice = signalCandle ? signalCandle.close : candles[candles.length - 1].close;
+  const currentCandle = signalCandle || candles[candles.length - 1];
+
   const htfTrend = getHTFTrend(htfAnalysis);
+  const htf1d = htfAnalysis['1d'] && htfAnalysis['1d'].structure ? htfAnalysis['1d'].structure.trend : 'neutral';
+  const htf4h = htfAnalysis['4h'] && htfAnalysis['4h'].structure ? htfAnalysis['4h'].structure.trend : 'neutral';
+  const htfAligned = htf1d !== 'neutral' && htf1d === htf4h;
 
-  // Session filter: boost confidence during killzones
   const inKillzone = session ? session.isKillzoneActive : false;
 
-  // Proximity threshold: 0.3% of price (catches zones within ~$250 for BTC)
+  // STRICT KILLZONE FILTER
+  if (CONFIG.STRICT_KILLZONE_FILTER && !inKillzone) {
+    return [];
+  }
+
+  const signals = [];
   const proximityThreshold = currentPrice * 0.003;
 
-  // --- LONG SIGNALS ---
-  // Always allow both directions - HTF trend affects confidence, not permission
-  {
-    // 1. Price at or near bullish OB
-    for (const ob of obs.filter(o => o.type === 'ob_bullish')) {
-      const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
-      const isAboveNear = currentPrice - ob.top > 0 && currentPrice - ob.top <= proximityThreshold;
-      const isBelowNear = ob.bottom - currentPrice > 0 && ob.bottom - currentPrice <= proximityThreshold;
+  // ===== LONG SIGNALS =====
+  for (const ob of obs.filter(o => o.type === 'ob_bullish')) {
+    const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
+    const isNear = Math.abs(currentPrice - ob.top) <= proximityThreshold || Math.abs(ob.bottom - currentPrice) <= proximityThreshold;
 
-      if (isInside || isAboveNear || isBelowNear) {
-        const sl = ob.bottom - (ob.top - ob.bottom) * 0.3;
-        const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
-        const rr = calculateRR(currentPrice, sl, tp);
-
-        if (rr >= 1.0) {
-          signals.push({
-            type: 'long',
-            entry: currentPrice,
-            sl,
-            tp,
-            rr: rr.toFixed(2),
-            confidence: getConfidence(ob, pd, htfTrend, 'long', inKillzone, volume),
-            reason: buildReason('long', 'order_block', ob, pd, htfTrend, structure, inKillzone),
-            time: currentCandle.time,
-            timeframe
-          });
-        }
-      }
-    }
-
-    // 2. Price at or near bullish FVG
-    for (const fvg of fvgs.filter(f => f.type === 'fvg_bullish')) {
-      const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
-      const isAboveNear = currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold;
-      const isBelowNear = fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold;
-
-      if (isInside || isAboveNear || isBelowNear) {
-        const sl = fvg.bottom - (fvg.top - fvg.bottom) * 0.5;
-        const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
-        const rr = calculateRR(currentPrice, sl, tp);
-
-        if (rr >= 1.0) {
-          signals.push({
-            type: 'long',
-            entry: currentPrice,
-            sl,
-            tp,
-            rr: rr.toFixed(2),
-            confidence: getConfidence(null, pd, htfTrend, 'long', inKillzone, volume),
-            reason: buildReason('long', 'fvg', fvg, pd, htfTrend, structure, inKillzone),
-            time: currentCandle.time,
-            timeframe
-          });
-        }
-      }
-    }
-
-    // 3. Liquidity sweep + reversal (inducement)
-    const recentSweep = detectLiquiditySweep(candles, liquidity, 'low');
-    if (recentSweep) {
-      const sl = recentSweep.sweepLow - (currentPrice - recentSweep.sweepLow) * 0.15;
+    if (isInside || isNear) {
+      const sl = ob.bottom - (ob.top - ob.bottom) * 0.1;
       const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
       const rr = calculateRR(currentPrice, sl, tp);
+      const confluence = checkConfluences('long', ob, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
 
-      if (rr >= 1.0) {
-        signals.push({
-          type: 'long',
-          entry: currentPrice,
-          sl,
-          tp,
-          rr: rr.toFixed(2),
-          confidence: 'high',
-          reason: `Liquidity sweep en ${formatPrice(recentSweep.sweepLow)}. Barrió stops y revirtió. HTF: ${htfTrend}. ${inKillzone ? '⚡ En Killzone.' : ''}`,
-          time: currentCandle.time,
-          timeframe
-        });
-      }
-    }
-
-    // 4. BOS/CHoCH bullish + discount zone (new trigger)
-    if (structure.bos.length > 0 || structure.choch.length > 0) {
-      const lastBullishBreak = [...structure.bos, ...structure.choch]
-        .filter(b => b.type.includes('bullish'))
-        .sort((a, b) => b.index - a.index)[0];
-
-      if (lastBullishBreak && pd && pd.position === 'discount') {
-        const recentBreak = lastBullishBreak.index > candles.length - 15;
-        if (recentBreak) {
-          const swingLow = findRecentSwingLow(candles, 10);
-          const sl = swingLow - (currentPrice - swingLow) * 0.1;
-          const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
-          const rr = calculateRR(currentPrice, sl, tp);
-
-          if (rr >= 1.0) {
-            signals.push({
-              type: 'long',
-              entry: currentPrice,
-              sl,
-              tp,
-              rr: rr.toFixed(2),
-              confidence: getConfidence(null, pd, htfTrend, 'long', inKillzone, volume),
-              reason: `BOS/CHoCH alcista reciente. Precio en zona de descuento. HTF: ${htfTrend}. SL bajo último swing low. ${inKillzone ? '⚡ En Killzone.' : ''}`,
-              time: currentCandle.time,
-              timeframe
-            });
-          }
-        }
+      if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+        signals.push(buildSignal('long', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'OB alcista ICT', ob));
       }
     }
   }
 
-  // --- SHORT SIGNALS ---
-  {
-    // 1. Price at or near bearish OB
-    for (const ob of obs.filter(o => o.type === 'ob_bearish')) {
-      const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
-      const isBelowApproaching = ob.bottom - currentPrice > 0 && ob.bottom - currentPrice <= proximityThreshold;
-      const isAboveLeaving = currentPrice - ob.top > 0 && currentPrice - ob.top <= proximityThreshold;
+  for (const fvg of fvgs.filter(f => f.type === 'fvg_bullish')) {
+    const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
+    const isNear = (currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold) || (fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold);
 
-      if (isInside || isBelowApproaching || isAboveLeaving) {
-        const sl = ob.top + (ob.top - ob.bottom) * 0.3;
-        const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
-        const rr = calculateRR(currentPrice, sl, tp);
+    if (isInside || isNear) {
+      const sl = fvg.bottom - (fvg.top - fvg.bottom) * 0.3;
+      const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
+      const rr = calculateRR(currentPrice, sl, tp);
+      const confluence = checkConfluences('long', null, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
 
-        if (rr >= 1.0) {
-          signals.push({
-            type: 'short',
-            entry: currentPrice,
-            sl,
-            tp,
-            rr: rr.toFixed(2),
-            confidence: getConfidence(ob, pd, htfTrend, 'short', inKillzone, volume),
-            reason: buildReason('short', 'order_block', ob, pd, htfTrend, structure, inKillzone),
-            time: currentCandle.time,
-            timeframe
-          });
-        }
+      if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+        signals.push(buildSignal('long', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'FVG alcista', fvg));
       }
     }
+  }
 
-    // 2. Price at or near bearish FVG
-    for (const fvg of fvgs.filter(f => f.type === 'fvg_bearish')) {
-      const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
-      const isAboveNear = currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold;
-      const isBelowNear = fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold;
+  // Liquidity sweep long
+  const sweepLow = detectLiquiditySweep(candles, liquidity, 'low');
+  if (sweepLow) {
+    const sl = sweepLow.sweepLow - (currentPrice - sweepLow.sweepLow) * 0.1;
+    const tp = findNextTarget(currentPrice, 'long', fvgs, liquidity, pd);
+    const rr = calculateRR(currentPrice, sl, tp);
+    const confluence = checkConfluences('long', null, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+    confluence.list.push('Liquidity sweep');
+    confluence.count++;
 
-      if (isInside || isAboveNear || isBelowNear) {
-        const sl = fvg.top + (fvg.top - fvg.bottom) * 0.5;
-        const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
-        const rr = calculateRR(currentPrice, sl, tp);
-
-        if (rr >= 1.0) {
-          signals.push({
-            type: 'short',
-            entry: currentPrice,
-            sl,
-            tp,
-            rr: rr.toFixed(2),
-            confidence: getConfidence(null, pd, htfTrend, 'short', inKillzone, volume),
-            reason: buildReason('short', 'fvg', fvg, pd, htfTrend, structure, inKillzone),
-            time: currentCandle.time,
-            timeframe
-          });
-        }
-      }
+    if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+      signals.push(buildSignal('long', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'Liquidity sweep alcista', null));
     }
+  }
 
-    // 3. Liquidity sweep high + reversal
-    const recentSweepHigh = detectLiquiditySweep(candles, liquidity, 'high');
-    if (recentSweepHigh) {
-      const sl = recentSweepHigh.sweepHigh + (recentSweepHigh.sweepHigh - currentPrice) * 0.15;
+  // ===== SHORT SIGNALS =====
+  for (const ob of obs.filter(o => o.type === 'ob_bearish')) {
+    const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
+    const isNear = Math.abs(ob.bottom - currentPrice) <= proximityThreshold || Math.abs(currentPrice - ob.top) <= proximityThreshold;
+
+    if (isInside || isNear) {
+      const sl = ob.top + (ob.top - ob.bottom) * 0.1;
       const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
       const rr = calculateRR(currentPrice, sl, tp);
+      const confluence = checkConfluences('short', ob, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
 
-      if (rr >= 1.0) {
-        signals.push({
-          type: 'short',
-          entry: currentPrice,
-          sl,
-          tp,
-          rr: rr.toFixed(2),
-          confidence: 'high',
-          reason: `Liquidity sweep en ${formatPrice(recentSweepHigh.sweepHigh)}. Barrió stops alcistas y revirtió. HTF: ${htfTrend}. ${inKillzone ? '⚡ En Killzone.' : ''}`,
-          time: currentCandle.time,
-          timeframe
-        });
-      }
-    }
-
-    // 4. BOS/CHoCH bearish + premium zone
-    if (structure.bos.length > 0 || structure.choch.length > 0) {
-      const lastBearishBreak = [...structure.bos, ...structure.choch]
-        .filter(b => b.type.includes('bearish'))
-        .sort((a, b) => b.index - a.index)[0];
-
-      if (lastBearishBreak && pd && pd.position === 'premium') {
-        const recentBreak = lastBearishBreak.index > candles.length - 15;
-        if (recentBreak) {
-          const swingHigh = findRecentSwingHigh(candles, 10);
-          const sl = swingHigh + (swingHigh - currentPrice) * 0.1;
-          const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
-          const rr = calculateRR(currentPrice, sl, tp);
-
-          if (rr >= 1.0) {
-            signals.push({
-              type: 'short',
-              entry: currentPrice,
-              sl,
-              tp,
-              rr: rr.toFixed(2),
-              confidence: getConfidence(null, pd, htfTrend, 'short', inKillzone, volume),
-              reason: `BOS/CHoCH bajista reciente. Precio en zona premium. HTF: ${htfTrend}. SL sobre último swing high. ${inKillzone ? '⚡ En Killzone.' : ''}`,
-              time: currentCandle.time,
-              timeframe
-            });
-          }
-        }
+      if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+        signals.push(buildSignal('short', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'OB bajista ICT', ob));
       }
     }
   }
 
-  // Deduplicate and sort by confidence
+  for (const fvg of fvgs.filter(f => f.type === 'fvg_bearish')) {
+    const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
+    const isNear = (currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold) || (fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold);
+
+    if (isInside || isNear) {
+      const sl = fvg.top + (fvg.top - fvg.bottom) * 0.3;
+      const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
+      const rr = calculateRR(currentPrice, sl, tp);
+      const confluence = checkConfluences('short', null, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+
+      if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+        signals.push(buildSignal('short', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'FVG bajista', fvg));
+      }
+    }
+  }
+
+  // Liquidity sweep short
+  const sweepHigh = detectLiquiditySweep(candles, liquidity, 'high');
+  if (sweepHigh) {
+    const sl = sweepHigh.sweepHigh + (sweepHigh.sweepHigh - currentPrice) * 0.1;
+    const tp = findNextTarget(currentPrice, 'short', fvgs, liquidity, pd);
+    const rr = calculateRR(currentPrice, sl, tp);
+    const confluence = checkConfluences('short', null, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+    confluence.list.push('Liquidity sweep');
+    confluence.count++;
+
+    if (rr >= CONFIG.MIN_RR && confluence.count >= CONFIG.MIN_CONFLUENCES) {
+      signals.push(buildSignal('short', currentPrice, sl, tp, rr, currentCandle, timeframe, confluence, htfTrend, htfAligned, inKillzone, 'Liquidity sweep bajista', null));
+    }
+  }
+
   return deduplicateSignals(signals);
 }
 
-function hasRecentBullishChoch(structure) {
-  if (!structure.choch || structure.choch.length === 0) return false;
-  const last = structure.choch[structure.choch.length - 1];
-  return last.type.includes('bullish');
-}
+// ===== HARD CONFLUENCE CHECK (min 3 of 7) =====
+function checkConfluences(direction, ob, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure) {
+  const list = [];
+  let count = 0;
 
-function hasRecentBearishChoch(structure) {
-  if (!structure.choch || structure.choch.length === 0) return false;
-  const last = structure.choch[structure.choch.length - 1];
-  return last.type.includes('bearish');
-}
-
-function findRecentSwingLow(candles, lookback) {
-  const recent = candles.slice(-lookback);
-  let lowest = recent[0].low;
-  for (const c of recent) {
-    if (c.low < lowest) lowest = c.low;
+  // a) HTF aligned (1D + 4H same direction)
+  if (htfAligned && ((direction === 'long' && htfTrend === 'bullish') || (direction === 'short' && htfTrend === 'bearish'))) {
+    count++; list.push('HTF alineado (1D+4H)');
   }
-  return lowest;
-}
 
-function findRecentSwingHigh(candles, lookback) {
-  const recent = candles.slice(-lookback);
-  let highest = recent[0].high;
-  for (const c of recent) {
-    if (c.high > highest) highest = c.high;
+  // b) Premium/Discount correct zone
+  if (pd) {
+    if (direction === 'long' && pd.position === 'discount') { count++; list.push('Zona descuento'); }
+    if (direction === 'short' && pd.position === 'premium') { count++; list.push('Zona premium'); }
   }
-  return highest;
+
+  // c) OB present
+  if (ob) { count++; list.push(`OB ${ob.strength || ''}`); }
+
+  // d) FVG present
+  if (fvg) { count++; list.push('FVG presente'); }
+
+  // e) Liquidity sweep recent
+  const sweep = detectLiquiditySweep(candles, liquidity, direction === 'long' ? 'low' : 'high');
+  if (sweep) { count++; list.push('Liquidez barrida'); }
+
+  // f) Killzone active
+  if (inKillzone) { count++; list.push('⚡ Killzone activa'); }
+
+  // g) CHoCH confirmed in entry TF
+  const recentChoch = structure.choch.filter(c => c.index > candles.length - 10);
+  const hasChoch = recentChoch.some(c => direction === 'long' ? c.type.includes('bullish') : c.type.includes('bearish'));
+  if (hasChoch) { count++; list.push('CHoCH confirmado'); }
+
+  return { count, list };
 }
 
+// ===== BUILD SIGNAL WITH BACKTESTING METADATA =====
+function buildSignal(type, entry, sl, tp, rr, candle, timeframe, confluence, htfTrend, htfAligned, inKillzone, trigger, zone) {
+  const confidence = getConfidence(htfTrend, htfAligned, type, confluence.count, inKillzone);
+  const zoneStr = zone ? ` (${zone.bottom.toFixed(0)}-${zone.top.toFixed(0)})` : '';
+
+  return {
+    type,
+    entry,
+    sl,
+    tp,
+    rr: rr.toFixed(2),
+    confidence,
+    time: candle.time,
+    timeframe,
+    confluences: confluence.list,
+    reason: `${type === 'long' ? '↑ Long' : '↓ Short'}: ${trigger}${zoneStr}. HTF: ${htfTrend}. Confluencias (${confluence.count}): ${confluence.list.join(' • ')}. ⚠ Esperar cierre de vela.`,
+    // Backtesting metadata
+    meta: {
+      confluences_count: confluence.count,
+      killzone_active: inKillzone,
+      htf_aligned: htfAligned,
+      rr_at_signal: rr.toFixed(2),
+      trigger,
+      timestamp: Date.now()
+    }
+  };
+}
+
+// ===== HTF TREND =====
 function getHTFTrend(htfAnalysis) {
-  const trend1d = htfAnalysis['1d'] && htfAnalysis['1d'].structure ? htfAnalysis['1d'].structure.trend : 'neutral';
-  const trend4h = htfAnalysis['4h'] && htfAnalysis['4h'].structure ? htfAnalysis['4h'].structure.trend : 'neutral';
-
-  // If both agree, strong signal
-  if (trend1d === trend4h) return trend1d;
-
-  // If they disagree, use 4h as it's more reactive
-  // But mark as the 4h trend (allows both directions with lower confidence)
-  return trend4h;
+  const t1d = htfAnalysis['1d'] && htfAnalysis['1d'].structure ? htfAnalysis['1d'].structure.trend : 'neutral';
+  const t4h = htfAnalysis['4h'] && htfAnalysis['4h'].structure ? htfAnalysis['4h'].structure.trend : 'neutral';
+  if (t1d === t4h && t1d !== 'neutral') return t1d;
+  return t4h !== 'neutral' ? t4h : t1d;
 }
 
+// ===== CONFIDENCE (HTF mandatory) =====
+function getConfidence(htfTrend, htfAligned, direction, confluenceCount, inKillzone) {
+  // HTF alignment is mandatory for medium/high
+  const htfOk = htfAligned && ((direction === 'long' && htfTrend === 'bullish') || (direction === 'short' && htfTrend === 'bearish'));
+  if (!htfOk) return 'low';
+
+  if (confluenceCount >= 5 && inKillzone) return 'high';
+  if (confluenceCount >= 4) return 'medium';
+  return 'low';
+}
+
+// ===== FIND TARGET (use 2nd target for better RR) =====
 function findNextTarget(price, direction, fvgs, liquidity, pd) {
   let targets = [];
 
   if (direction === 'long') {
-    for (const fvg of fvgs.filter(f => f.type === 'fvg_bearish' && f.bottom > price)) {
-      targets.push(fvg.bottom);
-    }
-    for (const liq of liquidity.filter(l => l.type.includes('high') && l.price > price)) {
-      targets.push(liq.price);
-    }
+    fvgs.filter(f => f.type === 'fvg_bearish' && f.bottom > price).forEach(f => targets.push(f.bottom));
+    liquidity.filter(l => l.type.includes('high') && l.price > price).forEach(l => targets.push(l.price));
     if (pd && pd.rangeHigh > price) targets.push(pd.rangeHigh);
-    // Always add a 1% target as minimum
-    targets.push(price * 1.01);
+    targets.push(price * 1.015); // fallback 1.5%
+    targets.push(price * 1.025); // fallback 2.5%
   } else {
-    for (const fvg of fvgs.filter(f => f.type === 'fvg_bullish' && f.top < price)) {
-      targets.push(fvg.top);
-    }
-    for (const liq of liquidity.filter(l => l.type.includes('low') && l.price < price)) {
-      targets.push(liq.price);
-    }
+    fvgs.filter(f => f.type === 'fvg_bullish' && f.top < price).forEach(f => targets.push(f.top));
+    liquidity.filter(l => l.type.includes('low') && l.price < price).forEach(l => targets.push(l.price));
     if (pd && pd.rangeLow < price) targets.push(pd.rangeLow);
-    // Always add a 1% target as minimum
-    targets.push(price * 0.99);
+    targets.push(price * 0.985);
+    targets.push(price * 0.975);
   }
 
-  // Sort and pick the best target (not too close, not too far)
   targets.sort((a, b) => direction === 'long' ? a - b : b - a);
+  const minDist = price * 0.003;
+  const valid = targets.filter(t => Math.abs(t - price) >= minDist);
 
-  // Filter out targets that are too close (< 0.3% away)
-  const minDistance = price * 0.003;
-  const validTargets = targets.filter(t => Math.abs(t - price) >= minDistance);
-
-  return validTargets.length > 0 ? validTargets[0] : targets[targets.length - 1];
+  // Use SECOND target if available (higher RR)
+  if (valid.length >= 2) return valid[1];
+  if (valid.length === 1) return valid[0];
+  return direction === 'long' ? price * 1.02 : price * 0.98;
 }
 
 function calculateRR(entry, sl, tp) {
@@ -328,87 +258,21 @@ function calculateRR(entry, sl, tp) {
   return risk > 0 ? reward / risk : 0;
 }
 
-function getConfidence(ob, pd, htfTrend, direction, inKillzone, volume) {
-  let score = 0;
-
-  // HTF alignment
-  if ((direction === 'long' && htfTrend === 'bullish') ||
-      (direction === 'short' && htfTrend === 'bearish')) {
-    score += 2;
-  }
-
-  // OB strength
-  if (ob) {
-    if (ob.strength === 'strong') score += 2;
-    else if (ob.strength === 'moderate') score += 1;
-  }
-
-  // Premium/Discount alignment
-  if (pd) {
-    if (direction === 'long' && pd.position === 'discount') score += 2;
-    if (direction === 'short' && pd.position === 'premium') score += 2;
-  }
-
-  // Killzone bonus
-  if (inKillzone) score += 1;
-
-  // Volume confirmation
-  if (volume && volume.isHighVolume) score += 1;
-
-  if (score >= 5) return 'high';
-  if (score >= 3) return 'medium';
-  return 'low';
-}
-
-function buildReason(direction, trigger, zone, pd, htfTrend, structure, inKillzone) {
-  const dir = direction === 'long' ? 'Long' : 'Short';
-  const trendText = htfTrend === 'bullish' ? 'alcista' : htfTrend === 'bearish' ? 'bajista' : 'neutral';
-  const pdText = pd ? (pd.position === 'premium' ? 'premium' : pd.position === 'discount' ? 'descuento' : 'equilibrio') : 'N/A';
-
-  let reason = `${dir}: `;
-
-  if (trigger === 'order_block') {
-    reason += `Precio en/cerca de Order Block ${direction === 'long' ? 'alcista' : 'bajista'} (${formatPrice(zone.bottom)} - ${formatPrice(zone.top)}). `;
-  } else if (trigger === 'fvg') {
-    reason += `Precio en/cerca de FVG ${direction === 'long' ? 'alcista' : 'bajista'} (${formatPrice(zone.bottom)} - ${formatPrice(zone.top)}). `;
-  }
-
-  reason += `HTF: ${trendText}. Zona: ${pdText}. `;
-
-  if (inKillzone) {
-    reason += '⚡ En Killzone. ';
-  }
-
-  if (structure.choch.length > 0) {
-    const lastChoch = structure.choch[structure.choch.length - 1];
-    reason += `CHoCH: ${lastChoch.type.includes('bullish') ? 'alcista' : 'bajista'} en ${formatPrice(lastChoch.price)}.`;
-  }
-
-  return reason;
-}
-
 function detectLiquiditySweep(candles, liquidity, type) {
-  const lookback = 8; // Increased lookback
-  const recent = candles.slice(-lookback);
-
+  const recent = candles.slice(-8);
   if (type === 'low') {
     for (const liq of liquidity.filter(l => l.type.includes('low'))) {
-      for (let i = 0; i < recent.length - 1; i++) {
-        if (recent[i].low < liq.price && recent[i].close > liq.price) {
-          return { sweepLow: recent[i].low, liquidityPrice: liq.price };
-        }
+      for (const c of recent) {
+        if (c.low < liq.price && c.close > liq.price) return { sweepLow: c.low };
       }
     }
   } else {
     for (const liq of liquidity.filter(l => l.type.includes('high'))) {
-      for (let i = 0; i < recent.length - 1; i++) {
-        if (recent[i].high > liq.price && recent[i].close < liq.price) {
-          return { sweepHigh: recent[i].high, liquidityPrice: liq.price };
-        }
+      for (const c of recent) {
+        if (c.high > liq.price && c.close < liq.price) return { sweepHigh: c.high };
       }
     }
   }
-
   return null;
 }
 
@@ -418,26 +282,13 @@ function formatPrice(price) {
 
 function deduplicateSignals(signals) {
   const unique = [];
-  const confidenceOrder = { high: 3, medium: 2, low: 1 };
-
-  for (const signal of signals) {
-    const existing = unique.find(s =>
-      s.type === signal.type &&
-      Math.abs(s.entry - signal.entry) < signal.entry * 0.001
-    );
-    if (!existing) {
-      unique.push(signal);
-    } else if (confidenceOrder[signal.confidence] > confidenceOrder[existing.confidence]) {
-      const idx = unique.indexOf(existing);
-      unique[idx] = signal;
-    }
+  const order = { high: 3, medium: 2, low: 1 };
+  for (const s of signals) {
+    const ex = unique.find(u => u.type === s.type && Math.abs(u.entry - s.entry) < s.entry * 0.001);
+    if (!ex) unique.push(s);
+    else if ((order[s.confidence] || 0) > (order[ex.confidence] || 0)) unique[unique.indexOf(ex)] = s;
   }
-
-  return unique.sort((a, b) => {
-    const confA = confidenceOrder[a.confidence] || 0;
-    const confB = confidenceOrder[b.confidence] || 0;
-    return confB - confA;
-  });
+  return unique.sort((a, b) => (order[b.confidence] || 0) - (order[a.confidence] || 0));
 }
 
-module.exports = { generateSignals };
+module.exports = { generateSignals, CONFIG };

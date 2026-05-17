@@ -89,7 +89,7 @@ const SMC = (function () {
               const mitigated = isMitigated(candles, i, 'bullish');
               if (!mitigated) {
                 orderBlocks.push({
-                  type: 'ob_bullish', startTime: candles[i].time, top: candles[i].open,
+                  type: 'ob_bullish', startTime: candles[i].time, top: candles[i].close,  // ICT: body (close of bearish candle)
                   bottom: candles[i].low, index: i, strength: moveSize > avgRange * 3 ? 'strong' : moveSize > avgRange * 2 ? 'moderate' : 'weak'
                 });
               }
@@ -213,43 +213,55 @@ const SMC = (function () {
     return { rangeHigh, rangeLow, equilibrium, position, currentPrice };
   }
 
-  // ===== SIGNALS =====
+  // ===== SIGNALS (ICT Enhanced) =====
+  // Config
+  const SIGNAL_CONFIG = { MIN_RR: 2.5, STRICT_KZ: true, MIN_CONF: 3 };
+
   function generateSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend) {
     const signals = [];
-    const currentPrice = candles[candles.length - 1].close;
-    const currentCandle = candles[candles.length - 1];
-    const prevCandle = candles[candles.length - 2];
+
+    // Use penultimate candle (closed), not the forming one — change #7
+    const signalCandle = candles.length >= 2 ? candles[candles.length - 2] : candles[candles.length - 1];
+    const currentPrice = signalCandle.close;
+    const currentCandle = signalCandle;
+
+    // ICT Killzone check (NY time) — change #2
+    const ictKZ = getICTKZInternal();
+    const inKillzone = ictKZ.isActive;
+    if (SIGNAL_CONFIG.STRICT_KZ && !inKillzone) return [];
+
     const proximityThreshold = currentPrice * 0.003;
-    const session = getCurrentSession();
+
+    // HTF alignment — change #4
+    const htfAligned = htfTrend !== 'neutral';
+    const htfOkLong = htfAligned && htfTrend === 'bullish';
+    const htfOkShort = htfAligned && htfTrend === 'bearish';
 
     // LONG signals
     for (const ob of obs.filter(o => o.type === 'ob_bullish')) {
       const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
       const isNear = Math.abs(currentPrice - ob.top) <= proximityThreshold || Math.abs(ob.bottom - currentPrice) <= proximityThreshold;
       if (isInside || isNear) {
-        const confirmation = checkBullishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('long', ob, null, pd, htfTrend, session, liquidity, candles, confirmation);
-
-        if (confluence.score >= 3) {
-          const sl = ob.bottom - (ob.top - ob.bottom) * 0.3;
-          const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'long', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('long', 'OB alcista', ob, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
+        const sl = ob.bottom - (ob.top - ob.bottom) * 0.1;
+        const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
+        const rr = calcRR(currentPrice, sl, tp);
+        const conf = hardConfluences('long', ob, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+        if (rr >= SIGNAL_CONFIG.MIN_RR && conf.count >= SIGNAL_CONFIG.MIN_CONF) {
+          signals.push(makeSignal('long', currentPrice, sl, tp, rr, currentCandle, conf, htfTrend, htfAligned, inKillzone, 'OB alcista ICT', ob));
         }
       }
     }
 
     for (const fvg of fvgs.filter(f => f.type === 'fvg_bullish')) {
-      const isNear = (currentPrice >= fvg.bottom && currentPrice <= fvg.top) || (currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold);
-      if (isNear) {
-        const confirmation = checkBullishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('long', null, fvg, pd, htfTrend, session, liquidity, candles, confirmation);
-
-        if (confluence.score >= 3) {
-          const sl = fvg.bottom - (fvg.top - fvg.bottom) * 0.5;
-          const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'long', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('long', 'FVG alcista', fvg, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
+      const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
+      const isNear = (currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold) || (fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold);
+      if (isInside || isNear) {
+        const sl = fvg.bottom - (fvg.top - fvg.bottom) * 0.3;
+        const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
+        const rr = calcRR(currentPrice, sl, tp);
+        const conf = hardConfluences('long', null, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+        if (rr >= SIGNAL_CONFIG.MIN_RR && conf.count >= SIGNAL_CONFIG.MIN_CONF) {
+          signals.push(makeSignal('long', currentPrice, sl, tp, rr, currentCandle, conf, htfTrend, htfAligned, inKillzone, 'FVG alcista', fvg));
         }
       }
     }
@@ -259,60 +271,26 @@ const SMC = (function () {
       const isInside = currentPrice >= ob.bottom && currentPrice <= ob.top;
       const isNear = Math.abs(ob.bottom - currentPrice) <= proximityThreshold || Math.abs(currentPrice - ob.top) <= proximityThreshold;
       if (isInside || isNear) {
-        const confirmation = checkBearishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('short', ob, null, pd, htfTrend, session, liquidity, candles, confirmation);
-
-        if (confluence.score >= 3) {
-          const sl = ob.top + (ob.top - ob.bottom) * 0.3;
-          const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'short', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('short', 'OB bajista', ob, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
+        const sl = ob.top + (ob.top - ob.bottom) * 0.1;
+        const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
+        const rr = calcRR(currentPrice, sl, tp);
+        const conf = hardConfluences('short', ob, null, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+        if (rr >= SIGNAL_CONFIG.MIN_RR && conf.count >= SIGNAL_CONFIG.MIN_CONF) {
+          signals.push(makeSignal('short', currentPrice, sl, tp, rr, currentCandle, conf, htfTrend, htfAligned, inKillzone, 'OB bajista ICT', ob));
         }
       }
     }
 
     for (const fvg of fvgs.filter(f => f.type === 'fvg_bearish')) {
-      const isNear = (currentPrice >= fvg.bottom && currentPrice <= fvg.top) || (fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold);
-      if (isNear) {
-        const confirmation = checkBearishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('short', null, fvg, pd, htfTrend, session, liquidity, candles, confirmation);
-
-        if (confluence.score >= 3) {
-          const sl = fvg.top + (fvg.top - fvg.bottom) * 0.5;
-          const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'short', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('short', 'FVG bajista', fvg, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
-        }
-      }
-    }
-
-    // BOS/CHoCH signals (require confluence too)
-    const lastBreak = [...structure.bos, ...structure.choch].sort((a, b) => b.index - a.index)[0];
-    if (lastBreak && lastBreak.index > candles.length - 15) {
-      if (lastBreak.type.includes('bullish') && pd && pd.position === 'discount') {
-        const confirmation = checkBullishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('long', null, null, pd, htfTrend, session, liquidity, candles, confirmation);
-        confluence.score += 1; // BOS/CHoCH itself is a confluence
-        confluence.details.push('BOS/CHoCH alcista');
-
-        if (confluence.score >= 3) {
-          const sl = findSwingLow(candles, 10) - currentPrice * 0.001;
-          const tp = findTarget(currentPrice, 'long', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'long', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('long', 'BOS/CHoCH alcista', null, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
-        }
-      }
-      if (lastBreak.type.includes('bearish') && pd && pd.position === 'premium') {
-        const confirmation = checkBearishConfirmation(currentCandle, prevCandle);
-        const confluence = scoreConfluence('short', null, null, pd, htfTrend, session, liquidity, candles, confirmation);
-        confluence.score += 1;
-        confluence.details.push('BOS/CHoCH bajista');
-
-        if (confluence.score >= 3) {
-          const sl = findSwingHigh(candles, 10) + currentPrice * 0.001;
-          const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
-          const rr = calcRR(currentPrice, sl, tp);
-          if (rr >= 1.0) signals.push({ type: 'short', entry: currentPrice, sl, tp, rr: rr.toFixed(2), confidence: confluence.level, reason: buildSignalReason('short', 'BOS/CHoCH bajista', null, confluence, htfTrend, pd, confirmation), time: currentCandle.time, confluences: confluence.details });
+      const isInside = currentPrice >= fvg.bottom && currentPrice <= fvg.top;
+      const isNear = (currentPrice - fvg.top >= 0 && currentPrice - fvg.top <= proximityThreshold) || (fvg.bottom - currentPrice >= 0 && fvg.bottom - currentPrice <= proximityThreshold);
+      if (isInside || isNear) {
+        const sl = fvg.top + (fvg.top - fvg.bottom) * 0.3;
+        const tp = findTarget(currentPrice, 'short', fvgs, liquidity, pd);
+        const rr = calcRR(currentPrice, sl, tp);
+        const conf = hardConfluences('short', null, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure);
+        if (rr >= SIGNAL_CONFIG.MIN_RR && conf.count >= SIGNAL_CONFIG.MIN_CONF) {
+          signals.push(makeSignal('short', currentPrice, sl, tp, rr, currentCandle, conf, htfTrend, htfAligned, inKillzone, 'FVG bajista', fvg));
         }
       }
     }
@@ -320,177 +298,83 @@ const SMC = (function () {
     return dedup(signals);
   }
 
-  // ===== CANDLE CONFIRMATION =====
-  function checkBullishConfirmation(current, prev) {
-    if (!current || !prev) return { confirmed: false, type: null };
-
-    const body = Math.abs(current.close - current.open);
-    const range = current.high - current.low;
-    const lowerWick = Math.min(current.open, current.close) - current.low;
-    const bodyRatio = range > 0 ? body / range : 0;
-    const isBullishClose = current.close > current.open;
-
-    // Pin bar / hammer: long lower wick + small body + bullish close
-    if (lowerWick > body * 1.5 && isBullishClose && bodyRatio < 0.5) {
-      return { confirmed: true, type: 'pin_bar', strength: 'strong' };
-    }
-
-    // Engulfing: current body engulfs previous body + bullish
-    if (isBullishClose && current.close > prev.high && current.open <= prev.low) {
-      return { confirmed: true, type: 'engulfing', strength: 'strong' };
-    }
-
-    // Strong bullish candle: body > 65% of range + closes in upper 30%
-    const closePosition = range > 0 ? (current.close - current.low) / range : 0;
-    if (isBullishClose && bodyRatio > 0.65 && closePosition > 0.7) {
-      return { confirmed: true, type: 'momentum', strength: 'moderate' };
-    }
-
-    // Rejection wick: lower wick > 50% of range
-    if (lowerWick > range * 0.5 && isBullishClose) {
-      return { confirmed: true, type: 'rejection', strength: 'moderate' };
-    }
-
-    return { confirmed: false, type: null };
+  // Hard confluence check — change #5 (min 3 of 7)
+  function hardConfluences(dir, ob, fvg, pd, htfTrend, htfAligned, inKillzone, liquidity, candles, structure) {
+    const list = []; let count = 0;
+    // a) HTF aligned
+    if (htfAligned && ((dir === 'long' && htfTrend === 'bullish') || (dir === 'short' && htfTrend === 'bearish'))) { count++; list.push('HTF alineado'); }
+    // b) P/D zone
+    if (pd) { if (dir === 'long' && pd.position === 'discount') { count++; list.push('Zona descuento'); } if (dir === 'short' && pd.position === 'premium') { count++; list.push('Zona premium'); } }
+    // c) OB
+    if (ob) { count++; list.push('OB ' + (ob.strength || '')); }
+    // d) FVG
+    if (fvg) { count++; list.push('FVG'); }
+    // e) Liquidity swept
+    const swept = checkLiquiditySwept(dir, liquidity, candles);
+    if (swept) { count++; list.push('Liquidez barrida'); }
+    // f) Killzone
+    if (inKillzone) { count++; list.push('⚡ Killzone'); }
+    // g) CHoCH in TF
+    const recentChoch = (structure.choch || []).filter(c => c.index > candles.length - 10);
+    if (recentChoch.some(c => dir === 'long' ? c.type.includes('bullish') : c.type.includes('bearish'))) { count++; list.push('CHoCH confirmado'); }
+    return { count, list };
   }
 
-  function checkBearishConfirmation(current, prev) {
-    if (!current || !prev) return { confirmed: false, type: null };
-
-    const body = Math.abs(current.close - current.open);
-    const range = current.high - current.low;
-    const upperWick = current.high - Math.max(current.open, current.close);
-    const bodyRatio = range > 0 ? body / range : 0;
-    const isBearishClose = current.close < current.open;
-
-    // Shooting star: long upper wick + small body + bearish close
-    if (upperWick > body * 1.5 && isBearishClose && bodyRatio < 0.5) {
-      return { confirmed: true, type: 'pin_bar', strength: 'strong' };
-    }
-
-    // Bearish engulfing
-    if (isBearishClose && current.close < prev.low && current.open >= prev.high) {
-      return { confirmed: true, type: 'engulfing', strength: 'strong' };
-    }
-
-    // Strong bearish candle
-    const closePosition = range > 0 ? (current.high - current.close) / range : 0;
-    if (isBearishClose && bodyRatio > 0.65 && closePosition > 0.7) {
-      return { confirmed: true, type: 'momentum', strength: 'moderate' };
-    }
-
-    // Rejection wick upper
-    if (upperWick > range * 0.5 && isBearishClose) {
-      return { confirmed: true, type: 'rejection', strength: 'moderate' };
-    }
-
-    return { confirmed: false, type: null };
+  // Build signal with backtesting metadata — change #8
+  function makeSignal(type, entry, sl, tp, rr, candle, conf, htfTrend, htfAligned, inKillzone, trigger, zone) {
+    const zoneStr = zone ? ' (' + zone.bottom.toFixed(0) + '-' + zone.top.toFixed(0) + ')' : '';
+    const confidence = getICTConf(htfTrend, htfAligned, type, conf.count, inKillzone);
+    return {
+      type, entry, sl, tp, rr: rr.toFixed(2), confidence,
+      time: candle.time,
+      confluences: conf.list,
+      reason: (type === 'long' ? '↑ Long' : '↓ Short') + ': ' + trigger + zoneStr + '. HTF: ' + htfTrend + '. Confluencias (' + conf.count + '): ' + conf.list.join(' • ') + '. ⚠ Esperar cierre de vela.',
+      meta: { confluences_count: conf.count, killzone_active: inKillzone, htf_aligned: htfAligned, rr_at_signal: rr.toFixed(2), trigger }
+    };
   }
 
-  // ===== CONFLUENCE SCORING =====
-  // Minimum 3 confluences required to generate a signal
-  function scoreConfluence(direction, ob, fvg, pd, htfTrend, session, liquidity, candles, confirmation) {
-    let score = 0;
-    const details = [];
-
-    // 1. HTF trend alignment (+1)
-    if ((direction === 'long' && htfTrend === 'bullish') || (direction === 'short' && htfTrend === 'bearish')) {
-      score += 1;
-      details.push(`HTF ${htfTrend}`);
-    }
-
-    // 2. Premium/Discount alignment (+1)
-    if (pd) {
-      if (direction === 'long' && pd.position === 'discount') { score += 1; details.push('Zona descuento'); }
-      if (direction === 'short' && pd.position === 'premium') { score += 1; details.push('Zona premium'); }
-    }
-
-    // 3. OB or FVG present (+1)
-    if (ob) { score += 1; details.push(`OB ${ob.strength}`); }
-    if (fvg) { score += 1; details.push('FVG'); }
-
-    // 4. OB strength bonus (+1 for strong)
-    if (ob && ob.strength === 'strong') { score += 1; details.push('OB fuerte'); }
-
-    // 5. Candle confirmation (+1 or +2 for strong)
-    if (confirmation && confirmation.confirmed) {
-      const pts = confirmation.strength === 'strong' ? 2 : 1;
-      score += pts;
-      const typeLabels = { pin_bar: 'Pin Bar', engulfing: 'Envolvente', momentum: 'Momentum', rejection: 'Rechazo' };
-      details.push(`Vela: ${typeLabels[confirmation.type] || confirmation.type}`);
-    }
-
-    // 6. Killzone active (+1)
-    if (session && session.isKillzoneActive) { score += 1; details.push(`⚡ ${session.killzoneLabel}`); }
-
-    // 7. Liquidity swept nearby (+1)
-    const swept = checkLiquiditySwept(direction, liquidity, candles);
-    if (swept) { score += 1; details.push('Liquidez barrida'); }
-
-    // Determine confidence level
-    let level = 'low';
-    if (score >= 6) level = 'high';
-    else if (score >= 4) level = 'medium';
-
-    return { score, level, details };
+  // HTF mandatory for medium/high — change #4
+  function getICTConf(htfTrend, htfAligned, dir, count, inKillzone) {
+    const htfOk = htfAligned && ((dir === 'long' && htfTrend === 'bullish') || (dir === 'short' && htfTrend === 'bearish'));
+    if (!htfOk) return 'low';
+    if (count >= 5 && inKillzone) return 'high';
+    if (count >= 4) return 'medium';
+    return 'low';
   }
 
-  function checkLiquiditySwept(direction, liquidity, candles) {
-    const lookback = 10;
-    const recent = candles.slice(-lookback);
-
-    if (direction === 'long') {
-      for (const liq of liquidity.filter(l => l.type.includes('low'))) {
-        for (const c of recent) {
-          if (c.low < liq.price && c.close > liq.price) return true;
-        }
-      }
-    } else {
-      for (const liq of liquidity.filter(l => l.type.includes('high'))) {
-        for (const c of recent) {
-          if (c.high > liq.price && c.close < liq.price) return true;
-        }
-      }
-    }
-    return false;
+  // ICT Killzone (NY time) — change #2
+  function getICTKZInternal() {
+    try {
+      const nyStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+      const ny = new Date(nyStr);
+      const t = ny.getHours() + ny.getMinutes() / 60;
+      if (t >= 2 && t < 5) return { isActive: true, label: 'London Open KZ' };
+      if (t >= 8.5 && t < 11) return { isActive: true, label: 'NY Open KZ' };
+      return { isActive: false, label: null };
+    } catch(e) { return { isActive: false, label: null }; }
   }
 
-  function buildSignalReason(direction, trigger, zone, confluence, htfTrend, pd, confirmation) {
-    const dir = direction === 'long' ? 'Long' : 'Short';
-    let reason = `${dir}: ${trigger}`;
-    if (zone) reason += ` (${zone.bottom.toFixed(0)}-${zone.top.toFixed(0)})`;
-    reason += `. `;
-
-    // Confluences
-    reason += `Confluencias (${confluence.score}): ${confluence.details.join(' • ')}. `;
-
-    // Confirmation status
-    if (confirmation && confirmation.confirmed) {
-      reason += `✓ Confirmación de vela.`;
-    } else {
-      reason += `⚠ Sin confirmación de vela (esperar).`;
-    }
-
-    return reason;
-  }
-
+  // Find target — change #6: use 2nd target for better RR
   function findTarget(price, dir, fvgs, liquidity, pd) {
     let targets = [];
     if (dir === 'long') {
       fvgs.filter(f => f.type === 'fvg_bearish' && f.bottom > price).forEach(f => targets.push(f.bottom));
       liquidity.filter(l => l.type.includes('high') && l.price > price).forEach(l => targets.push(l.price));
       if (pd && pd.rangeHigh > price) targets.push(pd.rangeHigh);
-      targets.push(price * 1.01);
+      targets.push(price * 1.015); targets.push(price * 1.03);
     } else {
       fvgs.filter(f => f.type === 'fvg_bullish' && f.top < price).forEach(f => targets.push(f.top));
       liquidity.filter(l => l.type.includes('low') && l.price < price).forEach(l => targets.push(l.price));
       if (pd && pd.rangeLow < price) targets.push(pd.rangeLow);
-      targets.push(price * 0.99);
+      targets.push(price * 0.985); targets.push(price * 0.97);
     }
     targets.sort((a, b) => dir === 'long' ? a - b : b - a);
     const min = price * 0.003;
     const valid = targets.filter(t => Math.abs(t - price) >= min);
-    return valid.length > 0 ? valid[0] : targets[targets.length - 1];
+    // Use 2nd target if available — change #6
+    if (valid.length >= 2) return valid[1];
+    if (valid.length === 1) return valid[0];
+    return dir === 'long' ? price * 1.025 : price * 0.975;
   }
 
   function calcRR(entry, sl, tp) {
@@ -503,16 +387,15 @@ const SMC = (function () {
   function findSwingHigh(candles, n) { let high = candles[candles.length - 1].high; for (let i = candles.length - n; i < candles.length; i++) { if (candles[i].high > high) high = candles[i].high; } return high; }
 
   function dedup(signals) {
-    const unique = [];
-    const order = { high: 3, medium: 2, low: 1 };
+    const unique = []; const order = { high: 3, medium: 2, low: 1 };
     for (const s of signals) {
       const ex = unique.find(u => u.type === s.type && Math.abs(u.entry - s.entry) < s.entry * 0.001);
-      if (!ex) unique.push(s); else if (order[s.confidence] > order[ex.confidence]) unique[unique.indexOf(ex)] = s;
+      if (!ex) unique.push(s); else if ((order[s.confidence] || 0) > (order[ex.confidence] || 0)) unique[unique.indexOf(ex)] = s;
     }
     return unique.sort((a, b) => (order[b.confidence] || 0) - (order[a.confidence] || 0));
   }
 
-  // ===== VOLUME =====
+    // ===== VOLUME =====
   function analyzeVolume(candles) {
     const recent = candles.slice(-50);
     const avg = recent.reduce((s, c) => s + c.volume, 0) / recent.length;
