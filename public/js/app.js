@@ -440,14 +440,18 @@
 
     // BOS markers & lines
     for (const b of (structure.bos || []).slice(-8)) {
-      const line = drawBoundedLine(b.time, lastCandleTime, b.price, '#42a5f5', 2, 2, 'BOS');
+      const endIdx = typeof b.index === 'number' ? Math.min(candles.length - 1, b.index + 8) : candles.length - 1;
+      const endTime = candles[endIdx].time;
+      const line = drawBoundedLine(b.time, endTime, b.price, '#42a5f5', 2, 2, 'BOS');
       if (line) drawnObjects.bos.push(line);
       markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
     }
 
     // CHoCH markers & lines
     for (const c of (structure.choch || []).slice(-4)) {
-      const line = drawBoundedLine(c.time, lastCandleTime, c.price, '#ffa726', 2, 2, 'CHoCH');
+      const endIdx = typeof c.index === 'number' ? Math.min(candles.length - 1, c.index + 8) : candles.length - 1;
+      const endTime = candles[endIdx].time;
+      const line = drawBoundedLine(c.time, endTime, c.price, '#ffa726', 2, 2, 'CHoCH');
       if (line) drawnObjects.choch.push(line);
       markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
     }
