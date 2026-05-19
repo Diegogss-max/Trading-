@@ -184,53 +184,58 @@
         if (warningEl) warningEl.style.display = 'none';
       }
 
-      // Renderizar listado de noticias en la barra lateral
+      // Renderizar listado de noticias en la barra lateral (filtrado solo para el día actual)
       if (listEl) {
-        listEl.innerHTML = news.map(e => {
-          const eDate = new Date(e.date);
-          const dateLabel = isEventToday(e.date) ? 'Hoy' : eDate.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit' });
-          const timeLabel = eDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-          const displayTime = `${dateLabel} · ${timeLabel}`;
+        const todayNews = news.filter(e => isEventToday(e.date));
 
-          // Formateo de estrellas físicas y clase de color
-          let starsStr = '';
-          let starsClass = '';
-          if (e.stars === 3) {
-            starsStr = '★★★';
-            starsClass = 'high';
-          } else if (e.stars === 2) {
-            starsStr = '★★☆';
-            starsClass = 'medium';
-          } else if (e.stars === 1) {
-            starsStr = '★☆☆';
-            starsClass = 'low';
-          } else {
-            starsStr = 'Holiday';
-            starsClass = 'holiday';
-          }
+        if (todayNews.length === 0) {
+          listEl.innerHTML = '<div class="no-signals" style="text-align: center; padding: 15px 10px;">☕ Sin noticias de USD programadas para hoy</div>';
+        } else {
+          listEl.innerHTML = todayNews.map(e => {
+            const eDate = new Date(e.date);
+            const timeLabel = eDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            const displayTime = `Hoy · ${timeLabel}`;
 
-          const impactClass = e.impact ? `impact-${e.impact.toLowerCase()}` : '';
+            // Formateo de estrellas físicas y clase de color
+            let starsStr = '';
+            let starsClass = '';
+            if (e.stars === 3) {
+              starsStr = '★★★';
+              starsClass = 'high';
+            } else if (e.stars === 2) {
+              starsStr = '★★☆';
+              starsClass = 'medium';
+            } else if (e.stars === 1) {
+              starsStr = '★☆☆';
+              starsClass = 'low';
+            } else {
+              starsStr = 'Holiday';
+              starsClass = 'holiday';
+            }
 
-          return `
-            <div class="news-card ${impactClass}">
-              <div class="news-card-header">
-                <span class="news-time-badge">${displayTime}</span>
-                <span class="news-stars ${starsClass}">${starsStr}</span>
-              </div>
-              <div class="news-title">${e.title}</div>
-              <div class="news-details">
-                <div class="news-detail">
-                  <span class="news-detail-label">Previsión</span>
-                  <span class="news-detail-value">${e.forecast}</span>
+            const impactClass = e.impact ? `impact-${e.impact.toLowerCase()}` : '';
+
+            return `
+              <div class="news-card ${impactClass}">
+                <div class="news-card-header">
+                  <span class="news-time-badge">${displayTime}</span>
+                  <span class="news-stars ${starsClass}">${starsStr}</span>
                 </div>
-                <div class="news-detail">
-                  <span class="news-detail-label">Previo</span>
-                  <span class="news-detail-value">${e.previous}</span>
+                <div class="news-title">${e.title}</div>
+                <div class="news-details">
+                  <div class="news-detail">
+                    <span class="news-detail-label">Previsión</span>
+                    <span class="news-detail-value">${e.forecast}</span>
+                  </div>
+                  <div class="news-detail">
+                    <span class="news-detail-label">Previo</span>
+                    <span class="news-detail-value">${e.previous}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          `;
-        }).join('');
+            `;
+          }).join('');
+        }
       }
 
     } catch (err) {
