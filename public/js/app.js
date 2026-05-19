@@ -97,6 +97,149 @@
 
     displayTimeframe(currentTimeframe);
     connectBinanceWS();
+    loadMacroNews(); // Cargar noticias macroeconómicas del servidor
+  }
+
+  async function loadMacroNews() {
+    const listEl = document.getElementById('macroNewsList');
+    const warningEl = document.getElementById('macroWarningBanner');
+    const warningTextEl = document.getElementById('macroWarningText');
+
+    try {
+      let news = null;
+
+      // Intentar primero obtener las noticias del servidor local
+      try {
+        const resp = await fetch('/api/news');
+        if (resp.ok) {
+          news = await resp.json();
+        } else {
+          console.log('Local API news not available (status ' + resp.status + '). Trying direct feed fallback...');
+        }
+      } catch (apiErr) {
+        console.log('Local API news connection failed. Trying direct feed fallback...');
+      }
+
+      // Si falló el servidor local (ej. desplegado estático en Vercel), obtenemos el feed directo desde el CDN
+      if (!news || news.length === 0) {
+        const directResp = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json');
+        if (!directResp.ok) {
+          throw new Error(`Direct CDN feed returned status ${directResp.status}`);
+        }
+        const rawNews = await directResp.json();
+
+        // Mapeo auxiliar de estrellas
+        const getStarRating = (impact) => {
+          switch (String(impact).toLowerCase()) {
+            case 'high': return 3;
+            case 'medium': return 2;
+            case 'low': return 1;
+            default: return 0;
+          }
+        };
+
+        // Filtrar solo las noticias de USD y estructurarlas igual que el backend
+        news = rawNews
+          .filter(e => e.country === 'USD')
+          .map(e => ({
+            title: e.title,
+            country: e.country,
+            date: e.date,
+            impact: e.impact,
+            stars: getStarRating(e.impact),
+            forecast: e.forecast || '--',
+            previous: e.previous || '--'
+          }));
+      }
+
+      if (!news || news.length === 0) {
+        if (listEl) listEl.innerHTML = '<div class="no-signals">Sin noticias esta semana</div>';
+        if (warningEl) warningEl.style.display = 'none';
+        return;
+      }
+
+      // Helper para verificar si un evento es el día de hoy
+      const today = new Date();
+      const isEventToday = (dateStr) => {
+        const d = new Date(dateStr);
+        return d.getDate() === today.getDate() &&
+               d.getMonth() === today.getMonth() &&
+               d.getFullYear() === today.getFullYear();
+      };
+
+      // Filtrar noticias de alto impacto (3 estrellas) que sucedan hoy
+      const todayHighEvents = news.filter(e => isEventToday(e.date) && e.stars === 3);
+
+      if (todayHighEvents.length > 0) {
+        if (warningEl && warningTextEl) {
+          const eventDetails = todayHighEvents.map(e => {
+            const time = new Date(e.date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            return `<b>${e.title}</b> (${time})`;
+          }).join(', ');
+          
+          warningTextEl.innerHTML = `⚠️ <b>ALERTA DE VOLATILIDAD:</b> Hoy hay noticias de alto impacto (3★): ${eventDetails}. ¡Se recomienda NO OPERAR hoy!`;
+          warningEl.style.display = 'flex';
+        }
+      } else {
+        if (warningEl) warningEl.style.display = 'none';
+      }
+
+      // Renderizar listado de noticias en la barra lateral
+      if (listEl) {
+        listEl.innerHTML = news.map(e => {
+          const eDate = new Date(e.date);
+          const dateLabel = isEventToday(e.date) ? 'Hoy' : eDate.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit' });
+          const timeLabel = eDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+          const displayTime = `${dateLabel} · ${timeLabel}`;
+
+          // Formateo de estrellas físicas y clase de color
+          let starsStr = '';
+          let starsClass = '';
+          if (e.stars === 3) {
+            starsStr = '★★★';
+            starsClass = 'high';
+          } else if (e.stars === 2) {
+            starsStr = '★★☆';
+            starsClass = 'medium';
+          } else if (e.stars === 1) {
+            starsStr = '★☆☆';
+            starsClass = 'low';
+          } else {
+            starsStr = 'Holiday';
+            starsClass = 'holiday';
+          }
+
+          const impactClass = e.impact ? `impact-${e.impact.toLowerCase()}` : '';
+
+          return `
+            <div class="news-card ${impactClass}">
+              <div class="news-card-header">
+                <span class="news-time-badge">${displayTime}</span>
+                <span class="news-stars ${starsClass}">${starsStr}</span>
+              </div>
+              <div class="news-title">${e.title}</div>
+              <div class="news-details">
+                <div class="news-detail">
+                  <span class="news-detail-label">Previsión</span>
+                  <span class="news-detail-value">${e.forecast}</span>
+                </div>
+                <div class="news-detail">
+                  <span class="news-detail-label">Previo</span>
+                  <span class="news-detail-value">${e.previous}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+    } catch (err) {
+      console.warn('Error loading macroeconomic news (falling back silently):', err.message);
+      if (listEl) {
+        listEl.innerHTML = '<div class="no-signals" style="color:var(--accent-red)">⚠️ Error al cargar noticias macro.</div>';
+      }
+      if (warningEl) warningEl.style.display = 'none';
+    }
   }
 
   function displayTimeframe(tf) {
@@ -205,64 +348,65 @@
   }
 
   function runAnalysis(tf) {
-    try {
-      const candles = candleData[tf];
-      if (!candles || candles.length < 50) return;
+    const candles = candleData[tf];
+    if (!candles || candles.length < 50) return;
 
-      const structure = SMC.analyzeStructure(candles);
-      const obs = SMC.detectOrderBlocks(candles, structure);
-      const fvgs = SMC.detectFVG(candles);
-      const liquidity = SMC.detectLiquidity(candles, structure);
-      const pd = SMC.calculatePremiumDiscount(candles, structure);
-      const volume = SMC.analyzeVolume(candles);
-      const session = SMC.getCurrentSession();
+    const structure = SMC.analyzeStructure(candles);
+    const obs = SMC.detectOrderBlocks(candles, structure);
+    const fvgs = SMC.detectFVG(candles);
+    const liquidity = SMC.detectLiquidity(candles, structure);
+    const pd = SMC.calculatePremiumDiscount(candles, structure);
+    const volume = SMC.analyzeVolume(candles);
+    const session = SMC.getCurrentSession();
 
-      const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
-      const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
-      const htfTrend = t4h === t1d ? t4h : t4h;
+    const t4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
+    const t1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
+    const htfTrend = t4h === t1d ? t4h : t4h;
 
-      // Use generateICTSignals — wraps generateSignals with ICT filters
-      let ictResult = { signals: [], outsideKZ: false, killzoneStatus: '', nextKZ: '' };
-      try {
-        ictResult = SMC.generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, candleData['5m'] || candleData['1m']);
-      } catch(e) {
-        console.warn('ICT signals error:', e.message);
-      }
+    const signals = SMC.generateICTSignals(candles, structure, obs, fvgs, liquidity, pd, htfTrend, candleData['5m'] || candleData['1m']);
 
-      // Show killzone status if outside
-      if (ictResult.outsideKZ) {
-        const sc = document.getElementById('signalsList');
-        if (sc) sc.innerHTML = `<div class="no-signals" style="color:#d29922">⏰ ${ictResult.killzoneStatus}<br><small style="color:#484f58">${ictResult.nextKZ || ''}</small></div>`;
-      }
-
-      const refinedSignals = [];
-      for (const signal of (ictResult.signals || [])) {
-        let refined = null;
-        if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
-          try { refined = SMC.refineEntry(signal, candleData['5m']); } catch(e) {}
-        }
-        if (!refined && tf !== '1m' && candleData['1m'] && candleData['1m'].length > 50) {
-          try { refined = SMC.refineEntry(signal, candleData['1m']); } catch(e) {}
-        }
-        refinedSignals.push({ ...signal, refined, hasRefinedEntry: !!refined });
-      }
-
-      // Track new signals
-      const now = Date.now();
-      if (refinedSignals.length > 0 && now - lastSignalTime > 30000) {
-        for (const s of refinedSignals) {
-          SignalTracker.addSignal({ ...s, timeframe: tf });
-        }
-        lastSignalTime = now;
-        renderTracker();
-      }
-
-      drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
-      updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, ictResult);
-    } catch(e) {
-      console.error('runAnalysis error:', e.message);
+    // If outside killzone, show status message
+    if (signals.outsideKZ) {
+      const sc = document.getElementById('signalsList');
+      sc.innerHTML = `<div class="no-signals" style="color:#d29922">⏰ ${signals.killzoneStatus}<br><small style="color:#484f58">${signals.nextKZ || ''}</small></div>`;
     }
+
+    const refinedSignals = [];
+    for (const signal of (signals.signals || [])) {
+      // Try to refine with 5m first, then 1m
+      let refined = null;
+      if (tf !== '1m' && candleData['5m'] && candleData['5m'].length > 50) {
+        refined = SMC.refineEntry(signal, candleData['5m']);
+      }
+      if (!refined && tf !== '1m' && candleData['1m'] && candleData['1m'].length > 50) {
+        refined = SMC.refineEntry(signal, candleData['1m']);
+      }
+
+      if (refined) {
+        refinedSignals.push({
+          ...signal,
+          refined: refined,
+          hasRefinedEntry: true
+        });
+      } else {
+        refinedSignals.push({ ...signal, hasRefinedEntry: false });
+      }
+    }
+
+    // Track new signals
+    const now = Date.now();
+    if (refinedSignals.length > 0 && now - lastSignalTime > 30000) {
+      for (const s of refinedSignals) {
+        SignalTracker.addSignal({ ...s, timeframe: tf });
+      }
+      lastSignalTime = now;
+      renderTracker();
+    }
+
+    drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
+    updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, signals);
   }
+
   function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
     markers = [];
     clearDrawnObjects();

@@ -61,6 +61,12 @@
       <span class="motiv-text" id="motivText">💎 El mercado recompensa a los pacientes. Tu momento es ahora.</span>
     </div>
 
+    <!-- Macroeconomic Warning Banner -->
+    <div class="macro-warning-banner" id="macroWarningBanner" style="display: none;">
+      <span class="macro-warn-icon">⚠️</span>
+      <span class="macro-warn-text" id="macroWarningText">ATENCIÓN: Hoy se publican noticias de alto impacto (3 estrellas). ¡Evita operar!</span>
+    </div>
+
     <div class="main-content">
       <div class="chart-container" id="chartContainer"></div>
 
@@ -88,6 +94,16 @@
             <div class="sim-stat">
               <span class="sim-stat-value" id="simActive">0</span>
               <span class="sim-stat-label">Abiertas</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Macroeconomic Calendar Section -->
+        <div class="panel-section macro-news-section">
+          <h3>📅 Noticias Macro (USD)</h3>
+          <div class="macro-news-container">
+            <div class="news-list" id="macroNewsList">
+              <div class="no-signals">Cargando noticias...</div>
             </div>
           </div>
         </div>

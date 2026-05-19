@@ -27,7 +27,7 @@ function detectOrderBlocks(candles, structure) {
               type: 'ob_bullish',
               startTime: candles[i].time,
               endTime: candles[Math.min(i + 1, candles.length - 1)].time,
-              top: candles[i].close,  // ICT: body top (close of bearish candle)
+              top: candles[i].open,
               bottom: candles[i].low,
               index: i,
               mitigated: isOBMitigated(candles, i, 'bullish'),

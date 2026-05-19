@@ -14,6 +14,7 @@ const { analyzeDisplacement, analyzeRangeDisplacement } = require('./smc/displac
 const { analyzeVolume, getVolumeAtIndex } = require('./smc/volume');
 const { SignalHistory } = require('./signalHistory');
 const { TradeSimulator } = require('./simulator');
+const { getMacroNews } = require('./news');
 
 const app = express();
 const server = http.createServer(app);
@@ -27,6 +28,17 @@ const simulator = new TradeSimulator();
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json());
+
+// API endpoint for macroeconomic news
+app.get('/api/news', async (req, res) => {
+  try {
+    const news = await getMacroNews();
+    res.json(news);
+  } catch (err) {
+    console.error('Error serving /api/news:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve macroeconomic news' });
+  }
+});
 
 // API endpoint for signal history
 app.get('/api/signals/history', (req, res) => {
