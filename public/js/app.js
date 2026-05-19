@@ -8,7 +8,7 @@
   let candleData = {};
   let htfAnalysis = {};
   let binanceWs = null;
-  let drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [] };
+  let drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [] };
   let markers = [];
   let lastSignalTime = 0;
 
@@ -412,38 +412,75 @@
     updatePanel(structure, obs, fvgs, liquidity, pd, refinedSignals, volume, session, htfTrend, signals);
   }
 
+  function drawBoundedLine(startTime, endTime, price, color, width, style, title = '') {
+    if (!chart) return null;
+    const series = chart.addLineSeries({
+      color: color,
+      lineWidth: width,
+      lineStyle: style,
+      priceLineVisible: false,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      title: title
+    });
+    series.setData([
+      { time: startTime, value: price },
+      { time: endTime, value: price }
+    ]);
+    return series;
+  }
+
   function drawAnalysis(structure, obs, fvgs, liquidity, pd, signals) {
     markers = [];
     clearDrawnObjects();
 
-    // BOS markers (blue arrows)
-    for (const b of (structure.bos || []).slice(-8)) markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
-    // CHoCH markers (orange, more visible)
-    for (const c of (structure.choch || []).slice(-4)) markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
+    const candles = candleData[currentTimeframe];
+    if (!candles || candles.length === 0) return;
+    const lastCandleTime = candles[candles.length - 1].time;
 
-    // ORDER BLOCKS - Solid thick lines, bright colors
+    // BOS markers & lines
+    for (const b of (structure.bos || []).slice(-8)) {
+      const line = drawBoundedLine(b.time, lastCandleTime, b.price, '#42a5f5', 2, 2, 'BOS');
+      if (line) drawnObjects.bos.push(line);
+      markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
+    }
+
+    // CHoCH markers & lines
+    for (const c of (structure.choch || []).slice(-4)) {
+      const line = drawBoundedLine(c.time, lastCandleTime, c.price, '#ffa726', 2, 2, 'CHoCH');
+      if (line) drawnObjects.choch.push(line);
+      markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
+    }
+
+    // ORDER BLOCKS - Solid thick lines, starting at ob.startTime
     for (const ob of obs.slice(-5)) {
       const isBull = ob.type === 'ob_bullish';
       const color = isBull ? '#00e676' : '#ff1744'; // Bright green / bright red
-      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.top, color, lineWidth: 3, lineStyle: 0, axisLabelVisible: true, title: isBull ? '── OB Bull ──' : '── OB Bear ──' }));
-      drawnObjects.obs.push(candleSeries.createPriceLine({ price: ob.bottom, color, lineWidth: 3, lineStyle: 0, axisLabelVisible: false, title: '' }));
+      const topLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.top, color, 3, 0, isBull ? 'OB Bull' : 'OB Bear');
+      const bottomLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.bottom, color, 3, 0);
+      if (topLine) drawnObjects.obs.push(topLine);
+      if (bottomLine) drawnObjects.obs.push(bottomLine);
     }
 
-    // FVGs - Dashed lines, purple/orange distinct from OBs
+    // FVGs - Dashed lines, starting at fvg.endTime (or startTime fallback)
     for (const fvg of fvgs.slice(-5)) {
       const isBull = fvg.type === 'fvg_bullish';
       const color = isBull ? '#ce93d8' : '#ffb74d'; // Light purple / light orange
-      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.top, color, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: isBull ? '┄ FVG Bull ┄' : '┄ FVG Bear ┄' }));
-      drawnObjects.fvgs.push(candleSeries.createPriceLine({ price: fvg.bottom, color, lineWidth: 2, lineStyle: 2, axisLabelVisible: false, title: '' }));
+      const start = fvg.endTime || fvg.startTime;
+      const topLine = drawBoundedLine(start, lastCandleTime, fvg.top, color, 2, 2, isBull ? 'FVG Bull' : 'FVG Bear');
+      const bottomLine = drawBoundedLine(start, lastCandleTime, fvg.bottom, color, 2, 2);
+      if (topLine) drawnObjects.fvgs.push(topLine);
+      if (bottomLine) drawnObjects.fvgs.push(bottomLine);
     }
 
-    // LIQUIDITY - Dotted yellow lines, clearly labeled
+    // LIQUIDITY - Dotted yellow lines, starting at liq.time
     for (const liq of liquidity.slice(-6)) {
       const isHigh = liq.type.includes('high');
-      drawnObjects.liquidity.push(candleSeries.createPriceLine({ price: liq.price, color: '#ffd600', lineWidth: 2, lineStyle: 3, axisLabelVisible: true, title: isHigh ? '$$$ LIQ High' : '$$$ LIQ Low' }));
+      const line = drawBoundedLine(liq.time, lastCandleTime, liq.price, '#ffd600', 2, 3, isHigh ? 'LIQ High' : 'LIQ Low');
+      if (line) drawnObjects.liquidity.push(line);
     }
 
-    // PREMIUM / DISCOUNT - Subtle zone markers
+    // PREMIUM / DISCOUNT - Subtle zone markers (global reference, keep full-screen)
     if (pd) {
       drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.equilibrium, color: '#90a4ae', lineWidth: 2, lineStyle: 4, axisLabelVisible: true, title: '═══ EQUILIBRIO ═══' }));
       drawnObjects.pd.push(candleSeries.createPriceLine({ price: pd.rangeHigh, color: '#ef5350', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: '▲ PREMIUM' }));
@@ -462,8 +499,27 @@
   }
 
   function clearDrawnObjects() {
-    for (const lines of Object.values(drawnObjects)) { for (const l of lines) { try { candleSeries.removePriceLine(l); } catch (e) {} } }
-    drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [] };
+    for (const lines of Object.values(drawnObjects)) {
+      for (const l of lines) {
+        try {
+          // Check if it's a Lightweight Charts Series or a PriceLine
+          if (l && typeof l.setData === 'function') {
+            chart.removeSeries(l);
+          } else {
+            candleSeries.removePriceLine(l);
+          }
+        } catch (e) {
+          try {
+            chart.removeSeries(l);
+          } catch (err) {
+            try {
+              candleSeries.removePriceLine(l);
+            } catch (err2) {}
+          }
+        }
+      }
+    }
+    drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [] };
   }
 
   function updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend, ictData) {
