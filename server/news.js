@@ -1,8 +1,9 @@
 const fs = require('fs').promises;
 const path = require('path');
 const https = require('https');
+const os = require('os');
 
-const CACHE_FILE = path.join(__dirname, 'calendar_cache.json');
+const CACHE_FILE = path.join(os.tmpdir(), 'trading_calendar_cache.json');
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour in milliseconds
 const FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
 
@@ -102,8 +103,12 @@ async function getMacroNews() {
       }));
 
     // Save filtered results to local cache file
-    await fs.writeFile(CACHE_FILE, JSON.stringify(usdEvents, null, 2), 'utf8');
-    console.log(`Macro News successfully cached. Found ${usdEvents.length} USD events.`);
+    try {
+      await fs.writeFile(CACHE_FILE, JSON.stringify(usdEvents, null, 2), 'utf8');
+      console.log(`Macro News successfully cached. Found ${usdEvents.length} USD events.`);
+    } catch (cacheErr) {
+      console.warn('Failed to write news cache file (safely proceeding without local cache write):', cacheErr.message);
+    }
 
     return usdEvents;
   } catch (fetchErr) {
