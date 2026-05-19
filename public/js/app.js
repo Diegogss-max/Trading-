@@ -613,6 +613,13 @@
         document.getElementById('guideOverlay').classList.remove('visible');
       }
     });
+
+    // Configurar paneles colapsables en la barra lateral
+    document.querySelectorAll('.panel-section h3').forEach(header => {
+      header.addEventListener('click', () => {
+        header.parentElement.classList.toggle('collapsed');
+      });
+    });
   }
 
   function fp(price) { return price ? Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'; }
