@@ -135,18 +135,92 @@ const SMC = (function () {
       const avgRange = getAvgRange(candles, i, 20);
 
       if (c3.low > c1.high && (c3.low - c1.high) > avgRange * 0.3) {
-        let filled = false;
-        for (let j = i + 1; j < candles.length; j++) { if (candles[j].low <= c1.high) { filled = true; break; } }
-        if (!filled) fvgs.push({ type: 'fvg_bullish', startTime: c1.time, endTime: c3.time, top: c3.low, bottom: c1.high, index: i - 1 });
+        const top = c3.low;
+        const bottom = c1.high;
+        const filled = isFVGMitigated(candles, i, bottom, top, 'bullish');
+        if (!filled) {
+          fvgs.push({
+            type: 'fvg_bullish',
+            startTime: c1.time,
+            endTime: c3.time,
+            top: top,
+            bottom: bottom,
+            index: i - 1,
+            ce: (top + bottom) / 2
+          });
+        }
       }
 
       if (c3.high < c1.low && (c1.low - c3.high) > avgRange * 0.3) {
-        let filled = false;
-        for (let j = i + 1; j < candles.length; j++) { if (candles[j].high >= c1.low) { filled = true; break; } }
-        if (!filled) fvgs.push({ type: 'fvg_bearish', startTime: c1.time, endTime: c3.time, top: c1.low, bottom: c3.high, index: i - 1 });
+        const top = c1.low;
+        const bottom = c3.high;
+        const filled = isFVGMitigated(candles, i, bottom, top, 'bearish');
+        if (!filled) {
+          fvgs.push({
+            type: 'fvg_bearish',
+            startTime: c1.time,
+            endTime: c3.time,
+            top: top,
+            bottom: bottom,
+            index: i - 1,
+            ce: (top + bottom) / 2
+          });
+        }
       }
     }
     return fvgs;
+  }
+
+  function isFVGMitigated(candles, fvgIndex, bottom, top, type, mode = 'ce_rejection') {
+    const ce = (top + bottom) / 2;
+
+    for (let i = fvgIndex + 1; i < candles.length; i++) {
+      const candle = candles[i];
+      const prevCandle = candles[i - 1];
+
+      if (type === 'bullish') {
+        if (mode === 'full' && candle.low <= bottom) return true;
+        if (mode === 'ce' && candle.low <= ce) return true;
+        if (mode === 'ce_rejection') {
+          if (candle.low <= ce) return true; // Touched CE midpoint
+
+          // Did it wick into the FVG partially?
+          if (candle.low <= top) {
+            const body = Math.abs(candle.close - candle.open);
+            const range = candle.high - candle.low;
+            const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+            const isBullishClose = candle.close > candle.open;
+
+            const isHammer = lowerWick > body * 1.5 && isBullishClose && (range > 0 ? body / range < 0.5 : false);
+            const isEngulfing = isBullishClose && prevCandle && candle.close > prevCandle.high && candle.open <= prevCandle.low;
+            const isStrongMomentum = isBullishClose && (range > 0 ? body / range > 0.65 : false) && candle.close > (candle.high + candle.low) / 2;
+
+            if (isHammer || isEngulfing || isStrongMomentum) return true;
+          }
+        }
+      } else {
+        if (mode === 'full' && candle.high >= top) return true;
+        if (mode === 'ce' && candle.high >= ce) return true;
+        if (mode === 'ce_rejection') {
+          if (candle.high >= ce) return true; // Touched CE midpoint
+
+          // Did it wick into the FVG partially?
+          if (candle.high >= bottom) {
+            const body = Math.abs(candle.close - candle.open);
+            const range = candle.high - candle.low;
+            const upperWick = candle.high - Math.max(candle.open, candle.close);
+            const isBearishClose = candle.close < candle.open;
+
+            const isShootingStar = upperWick > body * 1.5 && isBearishClose && (range > 0 ? body / range < 0.5 : false);
+            const isEngulfing = isBearishClose && prevCandle && candle.close < prevCandle.low && candle.open >= prevCandle.high;
+            const isStrongMomentum = isBearishClose && (range > 0 ? body / range > 0.65 : false) && candle.close < (candle.high + candle.low) / 2;
+
+            if (isShootingStar || isEngulfing || isStrongMomentum) return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   // ===== LIQUIDITY =====
