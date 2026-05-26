@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 const { BinanceClient } = require('./binance');
@@ -28,6 +29,42 @@ const simulator = new TradeSimulator();
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json());
+
+// API endpoint to capture and save early access leads (MVP Validation)
+app.post('/api/register-lead', (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido o no suministrado' });
+    }
+
+    const leadsPath = path.join(__dirname, '..', 'leads.json');
+    let leads = [];
+    if (fs.existsSync(leadsPath)) {
+      try {
+        const fileData = fs.readFileSync(leadsPath, 'utf8');
+        leads = JSON.parse(fileData);
+      } catch (err) {
+        console.error('Error reading leads file, resetting:', err.message);
+      }
+    }
+
+    // Check if duplicate
+    const exists = leads.some(lead => lead.email.toLowerCase() === email.toLowerCase());
+    if (!exists) {
+      leads.push({
+        email: email.toLowerCase(),
+        timestamp: new Date().toISOString()
+      });
+      fs.writeFileSync(leadsPath, JSON.stringify(leads, null, 2), 'utf8');
+    }
+
+    res.status(200).json({ success: true, message: 'Lead registrado exitosamente' });
+  } catch (err) {
+    console.error('Error en /api/register-lead:', err.message);
+    res.status(500).json({ error: 'Error interno al registrar el correo' });
+  }
+});
 
 // API endpoint for macroeconomic news
 app.get('/api/news', async (req, res) => {

@@ -16,16 +16,34 @@
   const MAX_CANDLES = 500;
 
   function init() {
-    // Loading screen greetings
+    // Diego Bypass Backdoor (MVP Skip)
+    const urlParams = new URLSearchParams(window.location.search);
+    const bypassParam = urlParams.get('bypass') || urlParams.get('email');
+    if (bypassParam) {
+      const emailValue = bypassParam === 'true' ? 'diego-admin@forbessecrets.com' : (bypassParam.includes('@') ? bypassParam : `${bypassParam}@gmail.com`);
+      localStorage.setItem('earlyAccessEmail', emailValue);
+      // Clean up the URL query in the address bar
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // Gate validation for MVP
+    const email = localStorage.getItem('earlyAccessEmail');
+    if (!email) {
+      window.location.href = '/';
+      return;
+    }
+
+    const emailName = email.split('@')[0];
+    // Loading screen greetings (dynamic for the registered trader!)
     const greetings = [
-      'Bienvenido una vez más, Diego 👑',
-      '¿Listo para ganar dinero, Diego? 💰',
-      'El mercado te espera, Diego 🦁',
-      'Hoy es tu día, Diego 🚀',
-      'A por todas, Diego 🔥',
-      'Los millonarios no descansan, Diego ⚡',
-      'Tu imperio crece, Diego 🏦',
-      'Vamos a cobrar, Diego 💎'
+      `Bienvenido una vez más, ${emailName} 👑`,
+      `¿Listo para ganar dinero, ${emailName}? 💰`,
+      `El mercado te espera, ${emailName} 🦁`,
+      `Hoy es tu día, ${emailName} 🚀`,
+      `A por todas, ${emailName} 🔥`,
+      `Los millonarios no descansan, ${emailName} ⚡`,
+      `Tu imperio crece, ${emailName} 🏦`,
+      `Vamos a cobrar, ${emailName} 💎`
     ];
 
     const greetEl = document.getElementById('loadingGreeting');
@@ -63,6 +81,17 @@
       loadAllData();
       renderTracker();
       renderMyTrades();
+
+      // Auto onboarding: show guide on first visit
+      if (!localStorage.getItem('guideShown')) {
+        setTimeout(() => {
+          const guideOverlay = document.getElementById('guideOverlay');
+          if (guideOverlay) {
+            guideOverlay.classList.add('visible');
+            localStorage.setItem('guideShown', 'true');
+          }
+        }, 1200);
+      }
     }, 4000);
   }
 
@@ -579,7 +608,7 @@
 
   function renderTracker() {
     const myStats = MyTrades.getStats();
-    document.getElementById('simWinRate').textContent = myStats.winRate;
+    document.getElementById('simWinRate').textContent = myStats.total > 0 ? myStats.winRate : 'Nuevo';
     document.getElementById('simWins').textContent = myStats.wins;
     document.getElementById('simLosses').textContent = myStats.losses;
     document.getElementById('simActive').textContent = MyTrades.getOpen().length;
@@ -594,7 +623,7 @@
     });
     const sc = document.getElementById('signalsList');
     if (active.length === 0) {
-      sc.innerHTML = '<div class="no-signals">Sin señales activas</div>';
+      sc.innerHTML = '<div class="no-signals onboarding-state">☕ Esperando confluencia institucional en BTC/USDT. ¡Consulta las Reglas de Oro de la Guía SMC!</div>';
     } else {
       sc.innerHTML = active.map(s => {
         const age = Math.floor((Date.now() - s.createdAt) / 60000);
@@ -718,7 +747,7 @@
     if (!container) return;
 
     if (trades.length === 0) {
-      container.innerHTML = '<div class="no-signals">Sin operaciones activas</div>';
+      container.innerHTML = '<div class="no-signals onboarding-state">📈 ¿Ejecutaste un trade? Presiona "📍 Entré" en una de las Señales Recomendadas abajo.</div>';
     } else {
       const currentPrice = candleData[currentTimeframe] && candleData[currentTimeframe].length > 0
         ? candleData[currentTimeframe][candleData[currentTimeframe].length - 1].close : 0;
@@ -777,7 +806,7 @@
     if (!hc) return;
 
     if (closed.length === 0) {
-      hc.innerHTML = '<div class="no-signals">Sin operaciones cerradas</div>';
+      hc.innerHTML = '<div class="no-signals onboarding-state">📋 Tu historial y estadísticas de acierto se calcularán una vez cierres tu primera operación.</div>';
     } else {
       const stats = MyTrades.getStats();
       hc.innerHTML = `

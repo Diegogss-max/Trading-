@@ -1298,4 +1298,107 @@ body {
   pointer-events: none;
 }
 
+/* ===== RESPONSIVE MOBILE ADAPTATION ===== */
+@media (max-width: 768px) {
+  body {
+    overflow: auto !important; /* Allow the entire page to scroll on mobile */
+    height: auto !important;
+  }
+
+  .app-container {
+    height: auto !important;
+    min-height: 100vh;
+  }
+
+  .app-header {
+    flex-direction: column;
+    padding: 12px;
+    gap: 12px;
+    height: auto;
+    align-items: stretch;
+  }
+
+  .header-left {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .header-left h1 {
+    font-size: 18px;
+  }
+
+  .price-display {
+    font-size: 18px;
+  }
+
+  .header-center {
+    justify-content: space-between;
+    padding: 8px 0;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    width: 100%;
+  }
+
+  .header-right {
+    justify-content: space-between;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .timeframe-selector {
+    flex: 1;
+    justify-content: space-around;
+  }
+
+  .timeframe-selector button {
+    padding: 6px 10px;
+    font-size: 11px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .main-content {
+    flex-direction: column !important; /* Stack chart and sidebar vertically */
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .chart-container {
+    height: 380px !important; /* Beautiful fixed height for chart on mobile */
+    width: 100% !important;
+    min-height: 380px !important;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .panel-sidebar {
+    width: 100% !important; /* Sidebar becomes full width */
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    overflow: visible !important; /* Scroll is handled by page body */
+    height: auto !important;
+  }
+
+  .sim-stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .mtf-grid {
+    grid-template-columns: repeat(3, 1fr) !important; /* 3x2 grid on mobile for high readability */
+    gap: 8px;
+  }
+
+  .motivational-bar {
+    padding: 8px 12px;
+    text-align: center;
+  }
+
+  .motiv-text {
+    font-size: 11px;
+    line-height: 1.4;
+    display: inline-block;
+  }
+}
+
+
 

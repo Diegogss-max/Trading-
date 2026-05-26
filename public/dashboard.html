@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SMC Trading - BTC/USDT</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="js/smc.js"></script>
+  <script src="js/simulator.js"></script>
+  <script src="js/mytrades.js"></script>
+</head>
+<body>
+  <!-- Loading Screen -->
+  <div class="loading-screen" id="loadingScreen">
+    <div class="loading-content">
+      <h1 class="loading-title">Forbes Secrets</h1>
+      <p class="loading-subtitle">Made by Saldaño</p>
+      <div class="loading-greeting" id="loadingGreeting">Bienvenido al terminal, Trader</div>
+      <div class="loading-bar-container">
+        <div class="loading-bar" id="loadingBar"></div>
+      </div>
+      <p class="loading-status" id="loadingStatus">Conectando con el mercado...</p>
+    </div>
+  </div>
+
+  <div class="app-container" id="appContainer" style="display:none;">
+    <header class="app-header">
+      <div class="header-left">
+        <h1>Forbes Secrets</h1>
+        <span class="made-by">Made by Saldaño</span>
+        <span class="pair-badge">BTC/USDT</span>
+        <span class="price-display" id="currentPrice">--</span>
+        <span class="price-change" id="priceChange">--</span>
+      </div>
+      <div class="header-center">
+        <div class="session-indicator" id="sessionIndicator">
+          <span class="session-dot" id="sessionDot"></span>
+          <span class="session-label" id="sessionLabel">--</span>
+        </div>
+        <div class="killzone-badge" id="killzoneBadge">
+          <span id="killzoneLabel">--</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="btn-guide" id="guideBtn">📖 Guía</button>
+        <div class="timeframe-selector" id="timeframeSelector">
+          <button data-tf="1m">1m</button>
+          <button data-tf="5m">5m</button>
+          <button data-tf="15m" class="active">15m</button>
+          <button data-tf="1h">1h</button>
+          <button data-tf="4h">4h</button>
+          <button data-tf="1d">1D</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="motivational-bar" id="motivationalBar">
+      <span class="motiv-text" id="motivText">📊 Terminal SMC Activa: Monitoreando zonas institucionales y liquidez de BTC/USDT en tiempo real.</span>
+    </div>
+
+    <!-- Macroeconomic Warning Banner -->
+    <div class="macro-warning-banner" id="macroWarningBanner" style="display: none;">
+      <span class="macro-warn-icon">⚠️</span>
+      <span class="macro-warn-text" id="macroWarningText">ATENCIÓN: Hoy se publican noticias de alto impacto (3 estrellas). ¡Evita operar!</span>
+    </div>
+
+    <div class="main-content">
+      <div class="chart-container" id="chartContainer"></div>
+
+      <aside class="panel-sidebar" id="panelSidebar">
+        <div class="panel-header">
+          <h2>Panel de Análisis</h2>
+        </div>
+
+        <!-- My Trading Stats -->
+        <div class="panel-section simulator-section">
+          <h3>📊 Mis Estadísticas</h3>
+          <div class="sim-stats-grid" id="myStatsGrid">
+            <div class="sim-stat">
+              <span class="sim-stat-value" id="simWinRate">0%</span>
+              <span class="sim-stat-label">Win Rate</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value win" id="simWins">0</span>
+              <span class="sim-stat-label">Ganadas</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value loss" id="simLosses">0</span>
+              <span class="sim-stat-label">Perdidas</span>
+            </div>
+            <div class="sim-stat">
+              <span class="sim-stat-value" id="simActive">0</span>
+              <span class="sim-stat-label">Abiertas</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Macroeconomic Calendar Section -->
+        <div class="panel-section macro-news-section">
+          <h3>📅 Noticias Macro (USD)</h3>
+          <div class="macro-news-container">
+            <div class="news-list" id="macroNewsList">
+              <div class="no-signals">Cargando noticias...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Multi-Timeframe Summary -->
+        <div class="panel-section">
+          <h3>Multi-Timeframe</h3>
+          <div class="mtf-grid" id="mtfGrid">
+            <div class="mtf-item" data-tf="1d">
+              <span class="mtf-label">1D</span>
+              <span class="mtf-trend" id="mtf-1d">--</span>
+            </div>
+            <div class="mtf-item" data-tf="4h">
+              <span class="mtf-label">4H</span>
+              <span class="mtf-trend" id="mtf-4h">--</span>
+            </div>
+            <div class="mtf-item" data-tf="1h">
+              <span class="mtf-label">1H</span>
+              <span class="mtf-trend" id="mtf-1h">--</span>
+            </div>
+            <div class="mtf-item" data-tf="15m">
+              <span class="mtf-label">15m</span>
+              <span class="mtf-trend" id="mtf-15m">--</span>
+            </div>
+            <div class="mtf-item" data-tf="5m">
+              <span class="mtf-label">5m</span>
+              <span class="mtf-trend" id="mtf-5m">--</span>
+            </div>
+            <div class="mtf-item" data-tf="1m">
+              <span class="mtf-label">1m</span>
+              <span class="mtf-trend" id="mtf-1m">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Volume & Pressure -->
+        <div class="panel-section">
+          <h3>Volumen & Presión</h3>
+          <div class="volume-info" id="volumeInfo">
+            <div class="volume-row">
+              <span class="vol-label">Vol. Relativo:</span>
+              <span class="vol-value" id="volRelative">--</span>
+            </div>
+            <div class="volume-row">
+              <span class="vol-label">Tendencia Vol:</span>
+              <span class="vol-value" id="volTrend">--</span>
+            </div>
+            <div class="pressure-bar">
+              <div class="pressure-buy" id="pressureBuy" style="width:50%"></div>
+              <div class="pressure-sell" id="pressureSell" style="width:50%"></div>
+            </div>
+            <div class="pressure-labels">
+              <span class="pressure-label buy">Compra <span id="buyPercent">50%</span></span>
+              <span class="pressure-label sell">Venta <span id="sellPercent">50%</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- My Open Trades -->
+        <div class="panel-section">
+          <h3>💼 Mis Operaciones</h3>
+          <div class="signals-list" id="myTradesList">
+            <div class="no-signals">Sin operaciones activas</div>
+          </div>
+        </div>
+
+        <!-- My Closed Trades -->
+        <div class="panel-section">
+          <h3>📋 Mi Historial</h3>
+          <div class="history-list" id="myTradesHistory">
+            <div class="no-signals">Sin operaciones cerradas</div>
+          </div>
+        </div>
+
+        <!-- Recommended Signals -->
+        <div class="panel-section">
+          <h3>🎯 Señales Recomendadas</h3>
+          <div class="signals-list" id="signalsList">
+            <div class="no-signals">Sin señales activas</div>
+          </div>
+        </div>
+
+        <!-- Volume & Pressure -->
+        <div class="panel-section">
+          <h3>Contexto</h3>
+          <div class="market-context" id="marketContext">
+            <div class="context-item">
+              <span class="context-label">Zona P/D:</span>
+              <span class="context-value" id="pdZone">--</span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Sesión:</span>
+              <span class="context-value" id="ctxSession">--</span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Killzone:</span>
+              <span class="context-value" id="ctxKillzone">--</span>
+            </div>
+          </div>
+          <div class="smc-summary" style="margin-top:8px">
+            <div class="smc-item"><span class="smc-icon ob-icon">■</span><span>OBs: <span id="obCount">0</span></span></div>
+            <div class="smc-item"><span class="smc-icon fvg-icon">▬</span><span>FVGs: <span id="fvgCount">0</span></span></div>
+            <div class="smc-item"><span class="smc-icon liq-icon">┄</span><span>Liquidez: <span id="liqCount">0</span></span></div>
+            <div class="smc-item"><span class="smc-icon bos-icon">↗</span><span>BOS/CHoCH: <span id="bosCount">0</span></span></div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="panel-section legend-section">
+          <h3>Leyenda</h3>
+          <div class="legend">
+            <div class="legend-item"><span class="legend-color" style="background:#00e676"></span> OB Alcista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ff1744"></span> OB Bajista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ce93d8"></span> FVG Alcista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ffb74d"></span> FVG Bajista</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ffd600"></span> Liquidez</div>
+            <div class="legend-item"><span class="legend-color" style="background:#42a5f5"></span> BOS</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ffa726"></span> CHoCH</div>
+            <div class="legend-item"><span class="legend-color" style="background:#90a4ae"></span> Equilibrio</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Guide Modal -->
+  <div class="guide-overlay" id="guideOverlay">
+    <div class="guide-modal">
+      <div class="guide-header">
+        <h2>📖 Guía de Uso — Forbes Secrets</h2>
+        <button class="guide-close" id="guideClose">✕</button>
+      </div>
+      <div class="guide-body">
+        <div class="guide-section">
+          <h3>🎯 Temporalidad Recomendada</h3>
+          <p><b>15 minutos</b> es tu sweet spot. Balance perfecto entre velocidad y precisión. Los Order Blocks y FVGs son respetados, y puedes operar varias veces al día.</p>
+        </div>
+        <div class="guide-section">
+          <h3>⚡ Cómo Operar</h3>
+          <ol>
+            <li>Deja la app en <b>15m</b> para recibir señales</li>
+            <li>Cuando aparezca una señal con <b>confluencia 4+</b> y <b>confirmación de vela</b>, esa es tu entrada</li>
+            <li>Si tiene <b>entrada refinada (LTF)</b>, usa ese precio y SL — mejor R:R</li>
+            <li>Opera solo a favor del <b>Multi-Timeframe</b> — si 4H y 1D apuntan igual, esas señales son oro</li>
+            <li>Presiona <b>"📍 Entré"</b> cuando ejecutes para trackear tu operación</li>
+          </ol>
+        </div>
+        <div class="guide-section">
+          <h3>🚦 Niveles de Confianza</h3>
+          <ul>
+            <li><b style="color:#3fb950">HIGH</b> (6+ confluencias) — Alta probabilidad. Ideal para entrar.</li>
+            <li><b style="color:#d29922">MEDIUM</b> (4-5 confluencias) — Buena señal, entra con precaución.</li>
+            <li><b style="color:#484f58">LOW</b> (3 confluencias) — Mínimo requerido. Mejor esperar o dejar pasar.</li>
+          </ul>
+        </div>
+        <div class="guide-section">
+          <h3>✅ / ⛔ Factibilidad</h3>
+          <p><b>✅ ENTRAR</b> — El precio aún permite buena entrada (R:R favorable).</p>
+          <p><b>⛔ NO ENTRAR</b> — Ya no conviene (precio cerca del TP, SL, o R:R malo).</p>
+        </div>
+        <div class="guide-section">
+          <h3>📊 Qué Significan las Líneas</h3>
+          <ul>
+            <li><b style="color:#00e676">━━ OB Bull</b> — Order Block alcista. Zona de compra institucional.</li>
+            <li><b style="color:#ff1744">━━ OB Bear</b> — Order Block bajista. Zona de venta institucional.</li>
+            <li><b style="color:#ce93d8">┄┄ FVG Bull</b> — Fair Value Gap alcista. Imbalance que el precio tiende a llenar.</li>
+            <li><b style="color:#ffb74d">┄┄ FVG Bear</b> — Fair Value Gap bajista.</li>
+            <li><b style="color:#ffd600">··· LIQ</b> — Zona de liquidez. Donde están los stop losses del mercado.</li>
+            <li><b style="color:#90a4ae">── EQ</b> — Equilibrio (50% del rango). Arriba = Premium, Abajo = Discount.</li>
+          </ul>
+        </div>
+        <div class="guide-section">
+          <h3>🧠 Reglas de Oro</h3>
+          <ul>
+            <li>Nunca operes contra la tendencia de 4H y 1D</li>
+            <li>Espera confirmación de vela antes de entrar</li>
+            <li>Respeta siempre tu Stop Loss</li>
+            <li>Solo opera durante Killzones (London Open, NY Open)</li>
+            <li>Si no hay señal clara, no operes. La paciencia paga.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
