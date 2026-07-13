@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700;800&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
   <script src="js/smc.js"></script>
   <script src="js/simulator.js"></script>
   <script src="js/mytrades.js"></script>
@@ -31,7 +32,10 @@
       <div class="header-left">
         <h1>Forbes Secrets</h1>
         <span class="made-by">Made by Saldaño</span>
-        <span class="pair-badge">BTC/USDT</span>
+        <div class="market-tabs">
+          <button class="market-tab active" id="tab-btc">BTC/USDT (SMC)</button>
+          <button class="market-tab" id="tab-voo">VOO ETF (TradingView)</button>
+        </div>
         <span class="price-display" id="currentPrice">--</span>
         <span class="price-change" id="priceChange">--</span>
       </div>
@@ -68,11 +72,47 @@
     </div>
 
     <div class="main-content">
-      <div class="chart-container" id="chartContainer"></div>
+      <div class="chart-container-wrapper" style="flex: 1; height: 100%; position: relative; display: flex; flex-direction: column; overflow: hidden;">
+        <div class="chart-container" id="chartContainer" style="flex: 1; height: 100%;"></div>
+        <div class="chart-container" id="vooChartContainer" style="display: none; flex: 1; height: 100%;">
+          <div id="tradingview_voo" style="height: 100%; width: 100%;"></div>
+        </div>
+      </div>
 
       <aside class="panel-sidebar" id="panelSidebar">
         <div class="panel-header">
           <h2>Panel de Análisis</h2>
+        </div>
+
+        <!-- Visualización Toggles -->
+        <div class="panel-section visualization-controls">
+          <h3>👁️ Visualización</h3>
+          <div class="control-toggles">
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-bos" checked>
+              <span>Mostrar BOS</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-choch" checked>
+              <span>Mostrar CHoCH</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-ob" checked>
+              <span>Mostrar Order Blocks</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-fvg" checked>
+              <span>Mostrar FVGs</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-liq" checked>
+              <span>Mostrar Liquidez</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="toggle-kz" checked>
+              <span>Mostrar Killzones</span>
+            </label>
+          </div>
         </div>
 
         <!-- My Trading Stats -->
@@ -223,6 +263,9 @@
             <div class="legend-item"><span class="legend-color" style="background:#42a5f5"></span> BOS</div>
             <div class="legend-item"><span class="legend-color" style="background:#ffa726"></span> CHoCH</div>
             <div class="legend-item"><span class="legend-color" style="background:#90a4ae"></span> Equilibrio</div>
+            <div class="legend-item"><span class="legend-color" style="background:#2196f3;opacity:0.7"></span> ⏰ London Open KZ</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ff9800;opacity:0.7"></span> ⏰ NY Open KZ</div>
+            <div class="legend-item"><span class="legend-color" style="background:#ab47bc;opacity:0.7"></span> ⏰ London Close KZ</div>
           </div>
         </div>
       </aside>

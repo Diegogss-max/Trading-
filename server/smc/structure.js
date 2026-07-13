@@ -3,7 +3,7 @@
  * Detects swing highs/lows, BOS (Break of Structure), and CHoCH (Change of Character)
  */
 
-function findSwingPoints(candles, lookback = 5) {
+function findSwingPoints(candles, lookback = 10) {
   const swingHighs = [];
   const swingLows = [];
 
@@ -32,108 +32,76 @@ function findSwingPoints(candles, lookback = 5) {
 }
 
 function analyzeStructure(candles) {
-  const { swingHighs, swingLows } = findSwingPoints(candles);
+  const lookback = 10;
+  const { swingHighs, swingLows } = findSwingPoints(candles, lookback);
   const bos = [];
   const choch = [];
 
-  // Determine trend based on swing points
   let trend = 'neutral'; // 'bullish', 'bearish', 'neutral'
-  let lastHigherHigh = null;
-  let lastHigherLow = null;
-  let lastLowerHigh = null;
-  let lastLowerLow = null;
-
-  // Analyze consecutive swing highs and lows for structure
-  for (let i = 1; i < swingHighs.length; i++) {
-    if (swingHighs[i].price > swingHighs[i - 1].price) {
-      lastHigherHigh = swingHighs[i];
-    } else {
-      lastLowerHigh = swingHighs[i];
-    }
-  }
-
-  for (let i = 1; i < swingLows.length; i++) {
-    if (swingLows[i].price > swingLows[i - 1].price) {
-      lastHigherLow = swingLows[i];
-    } else {
-      lastLowerLow = swingLows[i];
-    }
-  }
-
-  // Detect BOS and CHoCH
-  // BOS: price breaks a swing point in the direction of the trend
-  // CHoCH: price breaks a swing point against the trend (trend reversal signal)
   let currentTrend = 'neutral';
 
-  const allSwings = [];
-  swingHighs.forEach(sh => allSwings.push({ ...sh, type: 'high' }));
-  swingLows.forEach(sl => allSwings.push({ ...sl, type: 'low' }));
-  allSwings.sort((a, b) => a.index - b.index);
+  let activeHighs = [];
+  let activeLows = [];
 
-  for (let i = 2; i < allSwings.length; i++) {
-    const prev = allSwings[i - 2];
-    const mid = allSwings[i - 1];
-    const curr = allSwings[i];
+  for (let i = 0; i < candles.length; i++) {
+    // Add swing points that are now fully confirmed (i.e. we have passed the lookback period)
+    const newHigh = swingHighs.find(sh => sh.index === i - lookback);
+    if (newHigh) activeHighs.push(newHigh);
 
-    // Bullish BOS: new higher high after higher low
-    if (curr.type === 'high' && mid.type === 'low') {
-      const prevHigh = allSwings.slice(0, i).filter(s => s.type === 'high').pop();
-      if (prevHigh && curr.price > prevHigh.price) {
-        if (currentTrend === 'bullish') {
-          bos.push({
-            type: 'bos_bullish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
-          });
-        } else if (currentTrend === 'bearish') {
+    const newLow = swingLows.find(sl => sl.index === i - lookback);
+    if (newLow) activeLows.push(newLow);
+
+    const closePrice = candles[i].close;
+
+    // Check for bullish breakout (candle close breaks the most recent active swing high)
+    if (activeHighs.length > 0) {
+      const lastHigh = activeHighs[activeHighs.length - 1];
+      if (closePrice > lastHigh.price) {
+        if (currentTrend === 'bearish') {
           choch.push({
             type: 'choch_bullish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
+            time: candles[i].time,
+            price: lastHigh.price,
+            index: i
           });
           currentTrend = 'bullish';
         } else {
-          currentTrend = 'bullish';
           bos.push({
             type: 'bos_bullish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
+            time: candles[i].time,
+            price: lastHigh.price,
+            index: i
           });
+          if (currentTrend === 'neutral') currentTrend = 'bullish';
         }
+        // Once a break occurs, clear active highs to wait for new structure development
+        activeHighs = [];
       }
     }
 
-    // Bearish BOS: new lower low after lower high
-    if (curr.type === 'low' && mid.type === 'high') {
-      const prevLow = allSwings.slice(0, i).filter(s => s.type === 'low').pop();
-      if (prevLow && curr.price < prevLow.price) {
-        if (currentTrend === 'bearish') {
-          bos.push({
-            type: 'bos_bearish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
-          });
-        } else if (currentTrend === 'bullish') {
+    // Check for bearish breakout (candle close breaks the most recent active swing low)
+    if (activeLows.length > 0) {
+      const lastLow = activeLows[activeLows.length - 1];
+      if (closePrice < lastLow.price) {
+        if (currentTrend === 'bullish') {
           choch.push({
             type: 'choch_bearish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
+            time: candles[i].time,
+            price: lastLow.price,
+            index: i
           });
           currentTrend = 'bearish';
         } else {
-          currentTrend = 'bearish';
           bos.push({
             type: 'bos_bearish',
-            time: candles[curr.index].time,
-            price: curr.price,
-            index: curr.index
+            time: candles[i].time,
+            price: lastLow.price,
+            index: i
           });
+          if (currentTrend === 'neutral') currentTrend = 'bearish';
         }
+        // Once a break occurs, clear active lows
+        activeLows = [];
       }
     }
   }

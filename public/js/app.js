@@ -8,9 +8,11 @@
   let candleData = {};
   let htfAnalysis = {};
   let binanceWs = null;
-  let drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [] };
+  let drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [], kz: [] };
   let markers = [];
   let lastSignalTime = 0;
+  let activeToggles = { bos: true, choch: true, ob: true, fvg: true, liq: true, kz: true };
+  let tvWidget = null;
 
   const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
   const MAX_CANDLES = 500;
@@ -468,49 +470,149 @@
     const lastCandleTime = candles[candles.length - 1].time;
 
     // BOS markers & lines
-    for (const b of (structure.bos || []).slice(-8)) {
-      const endIdx = typeof b.index === 'number' ? Math.min(candles.length - 1, b.index + 8) : candles.length - 1;
-      const endTime = candles[endIdx].time;
-      const line = drawBoundedLine(b.time, endTime, b.price, '#42a5f5', 2, 2, 'BOS');
-      if (line) drawnObjects.bos.push(line);
-      markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
+    if (activeToggles.bos) {
+      for (const b of (structure.bos || []).slice(-8)) {
+        const endIdx = typeof b.index === 'number' ? Math.min(candles.length - 1, b.index + 8) : candles.length - 1;
+        const endTime = candles[endIdx].time;
+        const line = drawBoundedLine(b.time, endTime, b.price, '#42a5f5', 2, 2, 'BOS');
+        if (line) drawnObjects.bos.push(line);
+        markers.push({ time: b.time, position: b.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#42a5f5', shape: b.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'BOS' });
+      }
     }
 
     // CHoCH markers & lines
-    for (const c of (structure.choch || []).slice(-4)) {
-      const endIdx = typeof c.index === 'number' ? Math.min(candles.length - 1, c.index + 8) : candles.length - 1;
-      const endTime = candles[endIdx].time;
-      const line = drawBoundedLine(c.time, endTime, c.price, '#ffa726', 2, 2, 'CHoCH');
-      if (line) drawnObjects.choch.push(line);
-      markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
+    if (activeToggles.choch) {
+      for (const c of (structure.choch || []).slice(-4)) {
+        const endIdx = typeof c.index === 'number' ? Math.min(candles.length - 1, c.index + 8) : candles.length - 1;
+        const endTime = candles[endIdx].time;
+        const line = drawBoundedLine(c.time, endTime, c.price, '#ffa726', 2, 2, 'CHoCH');
+        if (line) drawnObjects.choch.push(line);
+        markers.push({ time: c.time, position: c.type.includes('bullish') ? 'belowBar' : 'aboveBar', color: '#ffa726', shape: c.type.includes('bullish') ? 'arrowUp' : 'arrowDown', text: 'CHoCH' });
+      }
     }
 
     // ORDER BLOCKS - Solid thick lines, starting at ob.startTime
-    for (const ob of obs.slice(-5)) {
-      const isBull = ob.type === 'ob_bullish';
-      const color = isBull ? '#00e676' : '#ff1744'; // Bright green / bright red
-      const topLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.top, color, 3, 0, isBull ? 'OB Bull' : 'OB Bear');
-      const bottomLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.bottom, color, 3, 0);
-      if (topLine) drawnObjects.obs.push(topLine);
-      if (bottomLine) drawnObjects.obs.push(bottomLine);
+    if (activeToggles.ob) {
+      for (const ob of obs.slice(-5)) {
+        const isBull = ob.type === 'ob_bullish';
+        const color = isBull ? '#00e676' : '#ff1744'; // Bright green / bright red
+        const topLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.top, color, 3, 0, isBull ? 'OB Bull' : 'OB Bear');
+        const bottomLine = drawBoundedLine(ob.startTime, lastCandleTime, ob.bottom, color, 3, 0);
+        if (topLine) drawnObjects.obs.push(topLine);
+        if (bottomLine) drawnObjects.obs.push(bottomLine);
+      }
     }
 
     // FVGs - Dashed lines, starting at fvg.endTime (or startTime fallback)
-    for (const fvg of fvgs.slice(-5)) {
-      const isBull = fvg.type === 'fvg_bullish';
-      const color = isBull ? '#ce93d8' : '#ffb74d'; // Light purple / light orange
-      const start = fvg.endTime || fvg.startTime;
-      const topLine = drawBoundedLine(start, lastCandleTime, fvg.top, color, 2, 2, isBull ? 'FVG Bull' : 'FVG Bear');
-      const bottomLine = drawBoundedLine(start, lastCandleTime, fvg.bottom, color, 2, 2);
-      if (topLine) drawnObjects.fvgs.push(topLine);
-      if (bottomLine) drawnObjects.fvgs.push(bottomLine);
+    if (activeToggles.fvg) {
+      for (const fvg of fvgs.slice(-5)) {
+        const isBull = fvg.type === 'fvg_bullish';
+        const color = isBull ? '#ce93d8' : '#ffb74d'; // Light purple / light orange
+        const start = fvg.endTime || fvg.startTime;
+        const topLine = drawBoundedLine(start, lastCandleTime, fvg.top, color, 2, 2, isBull ? 'FVG Bull' : 'FVG Bear');
+        const bottomLine = drawBoundedLine(start, lastCandleTime, fvg.bottom, color, 2, 2);
+        if (topLine) drawnObjects.fvgs.push(topLine);
+        if (bottomLine) drawnObjects.fvgs.push(bottomLine);
+      }
     }
 
     // LIQUIDITY - Dotted yellow lines, starting at liq.time
-    for (const liq of liquidity.slice(-6)) {
-      const isHigh = liq.type.includes('high');
-      const line = drawBoundedLine(liq.time, lastCandleTime, liq.price, '#ffd600', 2, 3, isHigh ? 'LIQ High' : 'LIQ Low');
-      if (line) drawnObjects.liquidity.push(line);
+    if (activeToggles.liq) {
+      for (const liq of liquidity.slice(-6)) {
+        const isHigh = liq.type.includes('high');
+        const line = drawBoundedLine(liq.time, lastCandleTime, liq.price, '#ffd600', 2, 3, isHigh ? 'LIQ High' : 'LIQ Low');
+        if (line) drawnObjects.liquidity.push(line);
+      }
+    }
+
+    // KILLZONES - Shaded background areas for London Open, NY Open, London Close
+    if (activeToggles.kz) {
+      // ICT Killzone definitions in UTC hours
+      const KZ_DEFS = [
+        { startUTC: 7,  endUTC: 10, label: 'London Open', color: 'rgba(33,150,243,0.06)',  borderColor: 'rgba(33,150,243,0.35)',  markerColor: '#2196f3' },
+        { startUTC: 12, endUTC: 15, label: 'NY Open',     color: 'rgba(255,152,0,0.06)',   borderColor: 'rgba(255,152,0,0.35)',   markerColor: '#ff9800' },
+        { startUTC: 15, endUTC: 17, label: 'London Close', color: 'rgba(171,71,188,0.06)', borderColor: 'rgba(171,71,188,0.35)', markerColor: '#ab47bc' }
+      ];
+
+      // Group candles by UTC day and find KZ ranges in the visible data
+      const kzWindows = [];
+      let prevDayKey = null;
+
+      for (let i = 0; i < candles.length - 1; i++) {
+        const c = candles[i];
+        const date = new Date(c.time * 1000);
+        const utcH = date.getUTCHours();
+        const dayKey = date.toISOString().slice(0, 10);
+
+        for (const kzDef of KZ_DEFS) {
+          if (utcH >= kzDef.startUTC && utcH < kzDef.endUTC) {
+            // Check if we already opened this window
+            const existing = kzWindows.find(w => w.label === kzDef.label && w.dayKey === dayKey);
+            if (!existing) {
+              // Find the candle that starts and ends this killzone block
+              let startTime = c.time;
+              let endTime   = c.time;
+              for (let j = i; j < candles.length; j++) {
+                const d2 = new Date(candles[j].time * 1000);
+                if (d2.toISOString().slice(0, 10) !== dayKey) break;
+                if (d2.getUTCHours() < kzDef.startUTC || d2.getUTCHours() >= kzDef.endUTC) break;
+                endTime = candles[j].time;
+              }
+              kzWindows.push({ ...kzDef, dayKey, startTime, endTime });
+            }
+          }
+        }
+      }
+
+      // Draw each killzone window as a background shaded area using a thin line series trick
+      // We use addHistogramSeries positioned well outside price to mimic background via markers
+      // Better approach: draw two vertical price lines per window + label marker
+      for (const w of kzWindows) {
+        // Top & bottom reference lines at approximate price range
+        const priceRange = candles.slice(-100);
+        const pHigh = Math.max(...priceRange.map(c => c.high));
+        const pLow  = Math.min(...priceRange.map(c => c.low));
+        const pad   = (pHigh - pLow) * 0.05;
+
+        // Draw top shading line
+        const kzSeries = chart.addLineSeries({
+          color: w.borderColor,
+          lineWidth: 1,
+          lineStyle: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false
+        });
+        kzSeries.setData([
+          { time: w.startTime, value: pHigh + pad },
+          { time: w.endTime,   value: pHigh + pad }
+        ]);
+        drawnObjects.kz.push(kzSeries);
+
+        // Draw bottom shading line
+        const kzSeriesBot = chart.addLineSeries({
+          color: w.borderColor,
+          lineWidth: 1,
+          lineStyle: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false
+        });
+        kzSeriesBot.setData([
+          { time: w.startTime, value: pLow - pad },
+          { time: w.endTime,   value: pLow - pad }
+        ]);
+        drawnObjects.kz.push(kzSeriesBot);
+
+        // Add a marker at the start of the killzone
+        markers.push({
+          time: w.startTime,
+          position: 'aboveBar',
+          color: w.markerColor,
+          shape: 'square',
+          text: `⏰ ${w.label}`
+        });
+      }
     }
 
     // PREMIUM / DISCOUNT - Subtle zone markers (global reference, keep full-screen)
@@ -552,7 +654,7 @@
         }
       }
     }
-    drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [] };
+    drawnObjects = { obs: [], fvgs: [], liquidity: [], pd: [], bos: [], choch: [], kz: [] };
   }
 
   function updatePanel(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend, ictData) {
@@ -678,6 +780,25 @@
     el.className = `price-change ${change >= 0 ? 'positive' : 'negative'}`;
   }
 
+  function initTradingViewWidget() {
+    if (tvWidget) return;
+    tvWidget = new TradingView.widget({
+      width: "100%",
+      height: "100%",
+      symbol: "AMEX:VOO",
+      interval: "D",
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "es",
+      toolbar_bg: "#131722",
+      enable_publishing: false,
+      hide_side_toolbar: false,
+      allow_symbol_change: true,
+      container_id: "tradingview_voo"
+    });
+  }
+
   function setupEventListeners() {
     document.querySelectorAll('.timeframe-selector button').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -689,6 +810,76 @@
         displayTimeframe(currentTimeframe);
       });
     });
+
+    // Market tabs
+    const tabBtc = document.getElementById('tab-btc');
+    const tabVoo = document.getElementById('tab-voo');
+    const containerBtc = document.getElementById('chartContainer');
+    const containerVoo = document.getElementById('vooChartContainer');
+
+    if (tabBtc && tabVoo) {
+      tabBtc.addEventListener('click', () => {
+        tabBtc.classList.add('active');
+        tabVoo.classList.remove('active');
+        containerBtc.style.display = 'block';
+        containerVoo.style.display = 'none';
+      });
+
+      tabVoo.addEventListener('click', () => {
+        tabVoo.classList.add('active');
+        tabBtc.classList.remove('active');
+        containerBtc.style.display = 'none';
+        containerVoo.style.display = 'block';
+        initTradingViewWidget();
+      });
+    }
+
+    // Toggle checkboxes
+    const toggleBos = document.getElementById('toggle-bos');
+    const toggleChoch = document.getElementById('toggle-choch');
+    const toggleOb = document.getElementById('toggle-ob');
+    const toggleFvg = document.getElementById('toggle-fvg');
+
+    if (toggleBos) {
+      toggleBos.addEventListener('change', (e) => {
+        activeToggles.bos = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
+    if (toggleChoch) {
+      toggleChoch.addEventListener('change', (e) => {
+        activeToggles.choch = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
+    if (toggleOb) {
+      toggleOb.addEventListener('change', (e) => {
+        activeToggles.ob = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
+    if (toggleFvg) {
+      toggleFvg.addEventListener('change', (e) => {
+        activeToggles.fvg = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
+
+    const toggleLiq = document.getElementById('toggle-liq');
+    const toggleKz  = document.getElementById('toggle-kz');
+
+    if (toggleLiq) {
+      toggleLiq.addEventListener('change', (e) => {
+        activeToggles.liq = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
+    if (toggleKz) {
+      toggleKz.addEventListener('change', (e) => {
+        activeToggles.kz = e.target.checked;
+        runAnalysis(currentTimeframe);
+      });
+    }
 
     // Guide modal
     document.getElementById('guideBtn').addEventListener('click', () => {

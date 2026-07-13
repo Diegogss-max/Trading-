@@ -5,7 +5,7 @@ const SMC = (function () {
   'use strict';
 
   // ===== STRUCTURE =====
-  function findSwingPoints(candles, lookback = 5) {
+  function findSwingPoints(candles, lookback = 10) {
     const swingHighs = [];
     const swingLows = [];
     for (let i = lookback; i < candles.length - lookback; i++) {
@@ -21,41 +21,48 @@ const SMC = (function () {
   }
 
   function analyzeStructure(candles) {
-    const { swingHighs, swingLows } = findSwingPoints(candles);
+    const lookback = 10;
+    const { swingHighs, swingLows } = findSwingPoints(candles, lookback);
     const bos = [], choch = [];
     let currentTrend = 'neutral';
 
-    const allSwings = [];
-    swingHighs.forEach(sh => allSwings.push({ ...sh, type: 'high' }));
-    swingLows.forEach(sl => allSwings.push({ ...sl, type: 'low' }));
-    allSwings.sort((a, b) => a.index - b.index);
+    let activeHighs = [];
+    let activeLows = [];
 
-    for (let i = 2; i < allSwings.length; i++) {
-      const curr = allSwings[i];
+    for (let i = 0; i < candles.length; i++) {
+      const newHigh = swingHighs.find(sh => sh.index === i - lookback);
+      if (newHigh) activeHighs.push(newHigh);
 
-      if (curr.type === 'high') {
-        const prevHigh = allSwings.slice(0, i).filter(s => s.type === 'high').pop();
-        if (prevHigh && curr.price > prevHigh.price) {
+      const newLow = swingLows.find(sl => sl.index === i - lookback);
+      if (newLow) activeLows.push(newLow);
+
+      const closePrice = candles[i].close;
+
+      if (activeHighs.length > 0) {
+        const lastHigh = activeHighs[activeHighs.length - 1];
+        if (closePrice > lastHigh.price) {
           if (currentTrend === 'bearish') {
-            choch.push({ type: 'choch_bullish', time: candles[curr.index].time, price: curr.price, index: curr.index });
+            choch.push({ type: 'choch_bullish', time: candles[i].time, price: lastHigh.price, index: i });
             currentTrend = 'bullish';
           } else {
-            bos.push({ type: 'bos_bullish', time: candles[curr.index].time, price: curr.price, index: curr.index });
+            bos.push({ type: 'bos_bullish', time: candles[i].time, price: lastHigh.price, index: i });
             if (currentTrend === 'neutral') currentTrend = 'bullish';
           }
+          activeHighs = [];
         }
       }
 
-      if (curr.type === 'low') {
-        const prevLow = allSwings.slice(0, i).filter(s => s.type === 'low').pop();
-        if (prevLow && curr.price < prevLow.price) {
+      if (activeLows.length > 0) {
+        const lastLow = activeLows[activeLows.length - 1];
+        if (closePrice < lastLow.price) {
           if (currentTrend === 'bullish') {
-            choch.push({ type: 'choch_bearish', time: candles[curr.index].time, price: curr.price, index: curr.index });
+            choch.push({ type: 'choch_bearish', time: candles[i].time, price: lastLow.price, index: i });
             currentTrend = 'bearish';
           } else {
-            bos.push({ type: 'bos_bearish', time: candles[curr.index].time, price: curr.price, index: curr.index });
+            bos.push({ type: 'bos_bearish', time: candles[i].time, price: lastLow.price, index: i });
             if (currentTrend === 'neutral') currentTrend = 'bearish';
           }
+          activeLows = [];
         }
       }
     }
