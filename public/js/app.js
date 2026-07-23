@@ -437,6 +437,8 @@
       }
       lastSignalTime = now;
       renderTracker();
+      // 💰 Money sound alert on new entry signal
+      playMoneySound();
     }
 
     drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
@@ -1066,6 +1068,84 @@
   }
 
   setInterval(rotatePhrase, 15000); // Change every 15 seconds
+
+  // ===== 💰 MONEY SOUND — Web Audio API (no external files needed) =====
+  function playMoneySound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+
+      // Resume context if it was suspended (browser autoplay policy)
+      if (ctx.state === 'suspended') ctx.resume();
+
+      // Helper: play a single metallic "ding" tone
+      function playDing(startTime, freq, duration, gainVal) {
+        const osc      = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const dist     = ctx.createWaveShaper();
+
+        // Slight overdrive for metallic warmth
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+          const x = (i * 2) / 256 - 1;
+          curve[i] = (Math.PI + 80) * x / (Math.PI + 80 * Math.abs(x));
+        }
+        dist.curve = curve;
+
+        osc.connect(dist);
+        dist.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, startTime);
+        // Quick attack, slow exponential decay — like a coin hitting metal
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(gainVal, startTime + 0.008);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      }
+
+      // Helper: short noise burst (coin rattle)
+      function playRattle(startTime, duration, gainVal) {
+        const bufSize = Math.floor(ctx.sampleRate * duration);
+        const buf     = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+        const data    = buf.getChannelData(0);
+        for (let i = 0; i < bufSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.015));
+        }
+        const src       = ctx.createBufferSource();
+        const gainNode  = ctx.createGain();
+        const filter    = ctx.createBiquadFilter();
+        filter.type     = 'bandpass';
+        filter.frequency.value = 4000;
+        filter.Q.value  = 0.8;
+        src.buffer      = buf;
+        src.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        gainNode.gain.setValueAtTime(gainVal, startTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+        src.start(startTime);
+      }
+
+      const t = ctx.currentTime + 0.05; // slight offset to avoid click
+
+      // Sequence: 3 ascending coin dings + rattle — classic "cha-ching" 💰
+      playDing(t,        1047, 0.55, 0.35); // Do5
+      playRattle(t,      0.08, 0.12);
+      playDing(t + 0.13, 1319, 0.55, 0.30); // Mi5
+      playRattle(t+0.13, 0.08, 0.10);
+      playDing(t + 0.26, 1568, 0.80, 0.55); // Sol5 — the big one 💰
+      playRattle(t+0.26, 0.12, 0.18);
+      // Final sparkle: high harmonic
+      playDing(t + 0.38, 2093, 0.50, 0.20); // Do6
+
+    } catch (e) {
+      console.warn('Signal audio unavailable:', e);
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', init);
 })();
