@@ -13,6 +13,20 @@
   let lastSignalTime = 0;
   let activeToggles = { bos: true, choch: true, ob: true, fvg: true, liq: true, kz: true };
   let tvWidget = null;
+  // SMC Diagnostic Ticker — shared state (must be declared before use in loadMacroNews / updatePanel)
+  let _tickerState = {
+    trend: 'neutral', htf4h: 'neutral', htf1d: 'neutral',
+    pdZone: 'equilibrium', killzoneActive: false, killzoneLabel: '',
+    hasOB: false, obCount: 0, obType: '', hasFVG: false, fvgCount: 0, fvgType: '',
+    hasBOS: false, bosType: '', hasCHoCH: false, chochType: '',
+    volHigh: false, volTrend: 'stable', buyPressure: 50,
+    signalCount: 0, signalType: '', signalConfidence: '', htfAligned: false,
+    currentPrice: 0, liqCount: 0, macroRisk: false, session: '',
+  };
+  let _tickerMessages = [];
+  let _tickerIndex    = 0;
+  let _tickerTimer    = null;
+  let _tickerInitialized = false;
 
   const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
   const MAX_CANDLES = 500;
@@ -202,6 +216,10 @@
       const todayHighEvents = news.filter(e => isEventToday(e.date) && e.stars === 3);
 
       if (todayHighEvents.length > 0) {
+        // Set macro risk flag for the diagnostic ticker
+        if (typeof _tickerState !== 'undefined') {
+          _tickerState.macroRisk = true;
+        }
         if (warningEl && warningTextEl) {
           const eventDetails = todayHighEvents.map(e => {
             const time = new Date(e.date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -708,6 +726,10 @@
     document.getElementById('fvgCount').textContent = fvgs.length;
     document.getElementById('liqCount').textContent = liquidity.length;
     document.getElementById('bosCount').textContent = (structure.bos || []).length + (structure.choch || []).length;
+
+    // Feed the SMC Diagnostic Ticker with fresh market data
+    updateTickerState(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend);
+    rotateTicker();
   }
 
   function renderTracker() {
@@ -1033,41 +1055,406 @@
   // Update my trades PnL periodically
   setInterval(renderMyTrades, 3000);
 
-  // Motivational phrases
-  const PHRASES = [
-    '💎 El mercado recompensa a los pacientes. Tu momento es ahora.',
-    '🦁 Piensa como millonario, opera como millonario, SÉ millonario.',
-    '🚀 Cada operación ganadora te acerca más a tu libertad financiera.',
-    '👑 Los ricos no trabajan por dinero. El dinero trabaja para ellos.',
-    '🔥 La disciplina de hoy es la riqueza de mañana. Sigue el plan.',
-    '💰 No estás aquí por suerte. Estás aquí porque eres imparable.',
-    '⚡ Un millonario no nace, se construye operación tras operación.',
-    '🏆 El 1% no duda. Analiza, ejecuta y cobra. Ese eres tú.',
-    '🌟 Tu cuenta bancaria es un reflejo de tu mentalidad. Piensa en grande.',
-    '🦈 Los tiburones no miran atrás. Siguiente trade, siguiente victoria.',
-    '🏦 Mientras otros duermen, tú construyes un imperio. No pares.',
-    '💵 El dinero fluye hacia quien tiene la disciplina de esperarlo.',
-    '🎯 Precisión sobre cantidad. Un buen trade vale más que cien malos.',
-    '🧠 Tu mente es tu mejor activo. Entrénala como un atleta de élite.',
-    '🌊 Las olas del mercado no te tumban, te elevan. Surfea con confianza.',
-    '🔑 La clave no es cuánto ganas, es cuánto conservas. Gestiona el riesgo.',
-    '💪 Los perdedores buscan excusas. Los ganadores buscan entradas. Tú ganas.',
-    '🏔️ La cima es solitaria, pero la vista es millonaria. Sigue subiendo.',
-    '⭐ Hoy es el día que tu futuro yo te agradecerá. Opera con convicción.',
-    '🐺 No sigues al rebaño. Tú eres el que mueve el mercado.'
-  ];
 
-  function rotatePhrase() {
-    const el = document.getElementById('motivText');
-    if (!el) return;
-    const phrase = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-    el.style.animation = 'none';
-    el.offsetHeight; // trigger reflow
-    el.style.animation = 'fadeMotiv 1s ease';
-    el.textContent = phrase;
+  // =====================================================
+  // SMC DIAGNOSTIC TICKER — Terminal de Diagnóstico
+  // Lógica condicional: cero emociones, puro análisis.
+  // _tickerState is declared at top of IIFE (shared scope).
+  // =====================================================
+
+  /**
+   * Called by updatePanel() each analysis cycle to feed fresh data into the ticker state.
+   */
+  function updateTickerState(structure, obs, fvgs, liquidity, pd, signals, volume, session, htfTrend) {
+    const htf4h = htfAnalysis['4h'] ? htfAnalysis['4h'].structure.trend : 'neutral';
+    const htf1d = htfAnalysis['1d'] ? htfAnalysis['1d'].structure.trend : 'neutral';
+    const ictKZ = SMC.getICTKillzone ? SMC.getICTKillzone() : { isActive: false, killzone: '' };
+
+    // Dominant OB type (look at most recent one)
+    const recentOB  = obs && obs.length > 0 ? obs[obs.length - 1] : null;
+    const recentFVG = fvgs && fvgs.length > 0 ? fvgs[fvgs.length - 1] : null;
+    const recentBOS = structure && structure.bos && structure.bos.length > 0 ? structure.bos[structure.bos.length - 1] : null;
+    const recentCHoCH = structure && structure.choch && structure.choch.length > 0 ? structure.choch[structure.choch.length - 1] : null;
+    const activeSignals = SignalTracker ? SignalTracker.getActive() : [];
+
+    _tickerState = {
+      trend:           structure ? structure.trend : 'neutral',
+      htf4h,
+      htf1d,
+      pdZone:          pd ? pd.position : 'equilibrium',
+      killzoneActive:  ictKZ.isActive,
+      killzoneLabel:   ictKZ.killzone || '',
+      hasOB:           obs && obs.length > 0,
+      obCount:         obs ? obs.length : 0,
+      obType:          recentOB ? (recentOB.type === 'ob_bullish' ? 'bullish' : 'bearish') : '',
+      hasFVG:          fvgs && fvgs.length > 0,
+      fvgCount:        fvgs ? fvgs.length : 0,
+      fvgType:         recentFVG ? (recentFVG.type === 'fvg_bullish' ? 'bullish' : 'bearish') : '',
+      hasBOS:          recentBOS != null,
+      bosType:         recentBOS ? (recentBOS.type && recentBOS.type.includes('bullish') ? 'bullish' : 'bearish') : '',
+      hasCHoCH:        recentCHoCH != null,
+      chochType:       recentCHoCH ? (recentCHoCH.type && recentCHoCH.type.includes('bullish') ? 'bullish' : 'bearish') : '',
+      volHigh:         volume ? volume.isHighVolume : false,
+      volTrend:        volume ? volume.volumeTrend : 'stable',
+      buyPressure:     volume ? volume.pressure.buyPercent : 50,
+      signalCount:     activeSignals.length,
+      signalType:      activeSignals.length > 0 ? activeSignals[0].type : '',
+      signalConfidence: activeSignals.length > 0 ? activeSignals[0].confidence : '',
+      htfAligned:      activeSignals.length > 0 && (
+                         (activeSignals[0].type === 'long'  && htf4h === 'bullish' && htf1d === 'bullish') ||
+                         (activeSignals[0].type === 'short' && htf4h === 'bearish' && htf1d === 'bearish')
+                       ),
+      liqCount:        liquidity ? liquidity.length : 0,
+      session:         session ? session.sessionLabel : '',
+      macroRisk:       _tickerState.macroRisk, // preserved from loadMacroNews
+    };
   }
 
-  setInterval(rotatePhrase, 15000); // Change every 15 seconds
+  /**
+   * Builds an ordered priority queue of diagnostic messages from current market state.
+   * Returns array of { type, category, message, icon, score } objects.
+   * type: 'valid' | 'warning' | 'invalid' | 'neutral'
+   */
+  function buildDiagnosticMessages() {
+    const s = _tickerState;
+    const messages = [];
+
+    // Helper shorthand
+    const bullDir = s.trend === 'bullish';
+    const bearDir = s.trend === 'bearish';
+    const htfBull = s.htf4h === 'bullish' && s.htf1d === 'bullish';
+    const htfBear = s.htf4h === 'bearish' && s.htf1d === 'bearish';
+    const htfConflict = s.htf4h !== 'neutral' && s.htf1d !== 'neutral' && s.htf4h !== s.htf1d;
+    const inDiscount = s.pdZone === 'discount';
+    const inPremium  = s.pdZone === 'premium';
+    const inEq       = s.pdZone === 'equilibrium';
+    const obAligned  = s.hasOB && s.obType === s.trend;
+    const fvgAligned = s.hasFVG && s.fvgType === s.trend;
+    const bosAligned = s.hasBOS && s.bosType === s.trend;
+    const kz = s.killzoneActive;
+
+    // Count total active confluences for the current direction
+    let score = 0;
+    if (bosAligned || (s.hasCHoCH && s.chochType === s.trend)) score++;
+    if (obAligned) score++;
+    if (fvgAligned) score++;
+    if (kz) score++;
+    if (s.volHigh && s.volTrend === 'increasing') score++;
+    if ((bullDir && inDiscount) || (bearDir && inPremium)) score++;
+    if (s.htfAligned) score += 2;
+    if (s.liqCount > 0) score++;
+
+    // ──────────────────────────────────────────
+    // 🔴 MÁXIMA PRIORIDAD: Macro Risk
+    // ──────────────────────────────────────────
+    if (s.macroRisk) {
+      messages.push({
+        type: 'invalid', category: 'RIESGO MACRO',
+        icon: '⚠',
+        message: 'ALERTA MACRO ACTIVA: Noticias de alto impacto hoy. Sistema en modo observación — NO OPERAR hasta resolución de volatilidad.',
+        score: 0
+      });
+    }
+
+    // ──────────────────────────────────────────
+    // ✅ SEÑALES VÁLIDAS (HIGH confidence)
+    // ──────────────────────────────────────────
+
+    // Best case: full ICT setup — signal + aligned HTF + killzone + OB + discount/premium
+    if (s.signalCount > 0 && s.signalConfidence === 'HIGH' && s.htfAligned && kz && obAligned) {
+      const dir = s.signalType === 'long' ? 'LONG' : 'SHORT';
+      const kzN = s.killzoneLabel || 'Killzone';
+      const pd  = inDiscount ? 'Zona Descuento' : inPremium ? 'Zona Premium' : 'Zona Equilibrio';
+      messages.push({
+        type: 'valid', category: 'CONFLUENCIA ÓPTIMA',
+        icon: '✔',
+        message: `Confluencia institucional óptima ▸ BOS ${dir.toLowerCase()}ish + OB alineado + ${pd} + ${kzN} activa + HTF 4H/1D confirmados. SETUP ${dir} VÁLIDO.`,
+        score
+      });
+    }
+
+    // CHoCH + OB + HTF aligned + KZ = high probability reversal
+    if (s.hasCHoCH && s.chochType === s.trend && obAligned && s.htfAligned && kz) {
+      const dir = bullDir ? 'alcista' : 'bajista';
+      messages.push({
+        type: 'valid', category: 'REVERSIÓN VALIDADA',
+        icon: '✔',
+        message: `CHoCH ${dir} confirmado + OB ${dir} respetado + HTF alineado. Estructura de reversión institucional válida — Killzone ${s.killzoneLabel || 'activa'}.`,
+        score
+      });
+    }
+
+    // Valid signal with MEDIUM confidence + HTF aligned
+    if (s.signalCount > 0 && s.signalConfidence === 'MEDIUM' && s.htfAligned && kz) {
+      const dir = s.signalType === 'long' ? 'alcista' : 'bajista';
+      messages.push({
+        type: 'valid', category: 'SEÑAL ACTIVA',
+        icon: '▲',
+        message: `Señal ${dir} activa con confluencia MEDIA ▸ HTF alineado, Killzone ${s.killzoneLabel || 'activa'}. Confirmar con engulfing o pin bar antes de entrar.`,
+        score
+      });
+    }
+
+    // HIGH signal but no KZ — wait
+    if (s.signalCount > 0 && s.signalConfidence === 'HIGH' && s.htfAligned && !kz) {
+      messages.push({
+        type: 'warning', category: 'ESPERAR KILLZONE',
+        icon: '⏱',
+        message: `Setup ${s.signalType === 'long' ? 'LONG' : 'SHORT'} HIGH CONFIDENCE — falta activación de Killzone. Londres y NY Open: ventanas institucionales óptimas.`,
+        score
+      });
+    }
+
+    // ──────────────────────────────────────────
+    // 🟡 ALERTAS DE CONFLUENCIA PARCIAL
+    // ──────────────────────────────────────────
+
+    // Good structure but price in wrong P/D zone
+    if (bullDir && inPremium && bosAligned && kz) {
+      messages.push({
+        type: 'warning', category: 'ZONA PREMIUM',
+        icon: '◈',
+        message: `BOS alcista confirmado, pero precio en Zona Premium (exceso). Mercado institucional compra en Descuento — esperar retroceso hacia OB o FVG.`,
+        score: Math.max(0, score - 2)
+      });
+    }
+    if (bearDir && inDiscount && bosAligned && kz) {
+      messages.push({
+        type: 'warning', category: 'ZONA DESCUENTO',
+        icon: '◈',
+        message: `BOS bajista detectado, pero precio en Zona Descuento (oversold). Short institucional se activa desde Premium — aguardar rebalanceo.`,
+        score: Math.max(0, score - 2)
+      });
+    }
+
+    // FVG present but structure doesn't confirm
+    if (s.hasFVG && fvgAligned && !bosAligned && !s.htfAligned) {
+      messages.push({
+        type: 'warning', category: 'FVG SIN ESTRUCTURA',
+        icon: '◉',
+        message: `FVG ${s.fvgType === 'bullish' ? 'alcista' : 'bajista'} activo, pero estructura ${s.trend} no respaldada por HTF. FVG puede llenarse sin continuación — NO OPERAR aún.`,
+        score: Math.max(0, score - 3)
+      });
+    }
+
+    // Volume spike but price in wrong zone
+    if (s.volHigh && s.volTrend === 'increasing' && bullDir && inPremium) {
+      messages.push({
+        type: 'warning', category: 'VOLUMEN EN PREMIUM',
+        icon: '◈',
+        message: `Volumen alto detectado pero precio en Zona Premium — faltan confluencias para confirmar compra institucional. Posible distribución o bull trap.`,
+        score: Math.max(0, score - 2)
+      });
+    }
+    if (s.volHigh && s.volTrend === 'increasing' && bearDir && inDiscount) {
+      messages.push({
+        type: 'warning', category: 'VOLUMEN EN DESCUENTO',
+        icon: '◈',
+        message: `Volumen creciente con tendencia bajista pero precio en Descuento — posible acumulación institucional. Evitar shorts hasta rebotar desde zona de valor.`,
+        score: Math.max(0, score - 2)
+      });
+    }
+
+    // HTF conflict
+    if (htfConflict) {
+      messages.push({
+        type: 'warning', category: 'CONFLICTO HTF',
+        icon: '⊘',
+        message: `Conflicto HTF: 4H ${s.htf4h === 'bullish' ? '↑ alcista' : '↓ bajista'} vs 1D ${s.htf1d === 'bullish' ? '↑ alcista' : '↓ bajista'}. Multi-Timeframe no alineado — sesgo ambiguo, operar con tamaño reducido.`,
+        score: 1
+      });
+    }
+
+    // OB present but no BOS / CHoCH — structure not broken yet
+    if (s.hasOB && obAligned && !bosAligned && !s.hasCHoCH) {
+      messages.push({
+        type: 'warning', category: 'OB SIN ROTURA',
+        icon: '□',
+        message: `Order Block ${s.obType === 'bullish' ? 'alcista' : 'bajista'} identificado, pero sin BOS ni CHoCH confirmado. El precio debe romper estructura antes de validar entrada desde el OB.`,
+        score: Math.max(0, score - 1)
+      });
+    }
+
+    // Signal LOW confidence
+    if (s.signalCount > 0 && s.signalConfidence === 'LOW') {
+      messages.push({
+        type: 'warning', category: 'SEÑAL DÉBIL',
+        icon: '△',
+        message: `Señal ${s.signalType === 'long' ? 'LONG' : 'SHORT'} con confluencia BAJA (< 4 factores). Mínimo requerido no alcanzado — mejor dejar pasar o esperar confirmación adicional.`,
+        score: Math.max(0, score - 2)
+      });
+    }
+
+    // Outside killzone and no signal
+    if (!kz && s.signalCount === 0) {
+      const sessionStr = s.session ? ` | Sesión: ${s.session}` : '';
+      messages.push({
+        type: 'neutral', category: 'FUERA DE KILLZONE',
+        icon: '⏸',
+        message: `Sin Killzone activa${sessionStr}. Probabilidad de manipulación elevada fuera de ventanas institucionales. Sistema en modo espera.`,
+        score: 0
+      });
+    }
+
+    // ──────────────────────────────────────────
+    // 🔴 DESCARTE (condiciones en contra)
+    // ──────────────────────────────────────────
+
+    // Trend against HTF
+    if (bullDir && htfBear) {
+      messages.push({
+        type: 'invalid', category: 'CONTRA HTF',
+        icon: '✖',
+        message: `Estructura LTF alcista CONTRA HTF bajista (4H/1D). Operar long aquí equivale a ir en contra del flujo institucional. DESCARTADO.`,
+        score: 0
+      });
+    }
+    if (bearDir && htfBull) {
+      messages.push({
+        type: 'invalid', category: 'CONTRA HTF',
+        icon: '✖',
+        message: `Estructura LTF bajista CONTRA HTF alcista (4H/1D). El mercado mayor sigue comprando — short de baja probabilidad. DESCARTADO.`,
+        score: 0
+      });
+    }
+
+    // ──────────────────────────────────────────
+    // 🔵 CONTEXTO NEUTRAL (datos informativos)
+    // ──────────────────────────────────────────
+
+    // Balanced OB + FVG + BOS — waiting for entry trigger
+    if (s.hasOB && s.hasFVG && s.hasBOS && s.signalCount === 0) {
+      messages.push({
+        type: 'neutral', category: 'PRE-SETUP',
+        icon: '◎',
+        message: `Estructura pre-setup detectada: OB + FVG + BOS presentes. Aguardando formación de señal de entrada con confirmación de vela. Modo observación.`,
+        score
+      });
+    }
+
+    // Liquidity hunt scenario
+    if (s.liqCount >= 3 && s.volHigh) {
+      messages.push({
+        type: 'neutral', category: 'HUNT DE LIQUIDEZ',
+        icon: '◎',
+        message: `${s.liqCount} zonas de liquidez activas con volumen alto — posible barrido institucional en curso. No perseguir rupturas, esperar reacción confirmada.`,
+        score
+      });
+    }
+
+    // General structure context
+    if (messages.length === 0) {
+      const dir = bullDir ? 'alcista' : bearDir ? 'bajista' : 'neutral';
+      messages.push({
+        type: 'neutral', category: 'ANÁLISIS',
+        icon: '◎',
+        message: `Estructura ${dir} en ${currentTimeframe} | HTF 4H: ${s.htf4h} · 1D: ${s.htf1d} | Zona: ${s.pdZone === 'premium' ? 'Premium' : s.pdZone === 'discount' ? 'Descuento' : 'Equilibrio'} | OBs: ${s.obCount} · FVGs: ${s.fvgCount}.`,
+        score
+      });
+    }
+
+    return messages;
+  }
+
+
+  /** Applies a single diagnostic entry to the DOM with fade animation. */
+  function applyTickerEntry(entry) {
+    const msgEl    = document.getElementById('tickerMessage');
+    const dotEl    = document.getElementById('tickerStatusDot');
+    const labelEl  = document.getElementById('tickerLabel');
+    const badgeEl  = document.getElementById('tickerScoreBadge');
+    const iconEl   = document.getElementById('tickerScoreIcon');
+    const valueEl  = document.getElementById('tickerScoreValue');
+
+    if (!msgEl) return;
+
+    // Fade out
+    msgEl.style.opacity = '0';
+    msgEl.style.transform = 'translateY(-5px)';
+
+    setTimeout(() => {
+      // Update content
+      msgEl.textContent = entry.message;
+
+      // Remove old type classes and apply new ones
+      ['valid','warning','invalid','neutral'].forEach(c => {
+        msgEl.classList.remove(c);
+        dotEl.classList.remove(c);
+        labelEl.classList.remove(c);
+        badgeEl.classList.remove(c);
+      });
+
+      msgEl.classList.add(entry.type);
+      dotEl.classList.add(entry.type);
+      labelEl.classList.add(entry.type);
+      badgeEl.classList.add(entry.type);
+
+      // Label text by category
+      const CATEGORY_LABELS = {
+        valid:   'CONFLUENCIA',
+        warning: 'ALERTA',
+        invalid: 'DESCARTE',
+        neutral: 'ANÁLISIS',
+      };
+      labelEl.textContent = entry.category || CATEGORY_LABELS[entry.type] || 'DIAGNÓSTICO';
+
+      // Score badge
+      const scoreMap = {
+        valid:   { icon: '✔', text: entry.score >= 6 ? `ALTA ${entry.score}` : `MED ${entry.score}` },
+        warning: { icon: '△', text: `CF ${entry.score}` },
+        invalid: { icon: '✖', text: 'DESCARTAR' },
+        neutral: { icon: '◎', text: 'ESPERAR' },
+      };
+      const badge = scoreMap[entry.type] || { icon: '—', text: '—' };
+      iconEl.textContent  = badge.icon;
+      valueEl.textContent = badge.text;
+
+      // Fade in
+      msgEl.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+      msgEl.style.opacity    = '1';
+      msgEl.style.transform  = 'translateY(0)';
+    }, 220);
+  }
+
+  /** Refreshes the message queue and advances to next message. Called on timer. */
+  function rotateTicker() {
+    _tickerMessages = buildDiagnosticMessages();
+    if (_tickerMessages.length === 0) return;
+
+    // Prioritize: always start with valid > warning > invalid > neutral if present
+    // Sort: valid first, then warning, then invalid, then neutral
+    const order = { valid: 0, warning: 1, invalid: 2, neutral: 3 };
+    _tickerMessages.sort((a, b) => order[a.type] - order[b.type]);
+
+    // Cycle through messages: first call always index 0, then advance
+    if (!_tickerInitialized) {
+      _tickerIndex = 0;
+      _tickerInitialized = true;
+    } else {
+      _tickerIndex = (_tickerIndex + 1) % _tickerMessages.length;
+    }
+
+    applyTickerEntry(_tickerMessages[_tickerIndex]);
+  }
+
+  /** Starts the ticker rotation engine. Called once on init. */
+  function initDiagnosticTicker() {
+    // Initial placeholder render
+    applyTickerEntry({
+      type: 'neutral', category: 'SISTEMA',
+      icon: '◎',
+      message: '⚙ Cargando datos de mercado — conectando con Binance en tiempo real...',
+      score: 0
+    });
+
+    // Refresh every 9 seconds
+    _tickerTimer = setInterval(rotateTicker, 9000);
+  }
+
+  // Bootstrap ticker on load
+  initDiagnosticTicker();
+
+  setInterval(rotateTicker, 15000); // double-safety refresh
 
   // ===== 💰 MONEY SOUND — Web Audio API (no external files needed) =====
   function playMoneySound() {
