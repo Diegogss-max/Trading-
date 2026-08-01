@@ -1448,7 +1448,7 @@
     });
 
     // Refresh every 9 seconds
-    _tickerTimer = setInterval(rotateTicker, 9000);
+    _tickerTimer = setInterval(rotateTicker, 10000);
   }
 
   // Bootstrap ticker on load
