@@ -73,6 +73,7 @@
         <span class="ticker-score-icon" id="tickerScoreIcon">—</span>
         <span class="ticker-score-value" id="tickerScoreValue">—</span>
       </div>
+      <button class="btn-ticker-expand" id="diagOpenBtn" style="margin-left: 10px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; cursor: pointer; padding: 4px 10px; border-radius: 4px; font-size: 12px; transition: 0.2s;">🔍 Ver todo</button>
     </div>
 
     <!-- Macroeconomic Warning Banner -->
@@ -332,6 +333,19 @@
             <li>Si no hay señal clara, no operes. La paciencia paga.</li>
           </ul>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diagnostic Full Modal -->
+  <div class="guide-overlay" id="diagOverlay">
+    <div class="guide-modal" style="max-width: 800px;">
+      <div class="guide-header">
+        <h2>🔍 Análisis de Confluencias (Completo)</h2>
+        <button class="guide-close" id="diagClose">✕</button>
+      </div>
+      <div class="guide-body" id="diagBody" style="display: flex; flex-direction: column; gap: 10px;">
+        <!-- populated by js -->
       </div>
     </div>
   </div>

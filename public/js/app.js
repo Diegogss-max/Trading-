@@ -943,6 +943,41 @@
       }
     });
 
+    // Diagnostic modal
+    const diagBtn = document.getElementById('diagOpenBtn');
+    if (diagBtn) {
+      diagBtn.addEventListener('click', () => {
+        const diagBody = document.getElementById('diagBody');
+        if (diagBody && typeof _tickerMessages !== 'undefined') {
+          diagBody.innerHTML = _tickerMessages.map(msg => `
+            <div style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; border-left: 4px solid ${
+              msg.type === 'valid' ? '#00e676' : msg.type === 'warning' ? '#ff9800' : msg.type === 'invalid' ? '#ef5350' : '#42a5f5'
+            }">
+              <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px; color: rgba(255,255,255,0.7);">
+                ${msg.icon} ${msg.category}
+              </div>
+              <div style="font-size: 14px; line-height: 1.4;">${msg.message}</div>
+            </div>
+          `).join('');
+        }
+        document.getElementById('diagOverlay').classList.add('visible');
+      });
+    }
+    const diagClose = document.getElementById('diagClose');
+    if (diagClose) {
+      diagClose.addEventListener('click', () => {
+        document.getElementById('diagOverlay').classList.remove('visible');
+      });
+    }
+    const diagOverlay = document.getElementById('diagOverlay');
+    if (diagOverlay) {
+      diagOverlay.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) {
+          diagOverlay.classList.remove('visible');
+        }
+      });
+    }
+
     // Configurar paneles colapsables en la barra lateral
     document.querySelectorAll('.panel-section h3').forEach(header => {
       header.addEventListener('click', () => {
