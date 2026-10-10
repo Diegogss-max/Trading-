@@ -58,9 +58,17 @@
   }
 
   async function getUpdates(token) {
-    const url = `https://api.telegram.org/bot${token}/getUpdates?limit=10&timeout=0`;
+    const url = `https://api.telegram.org/bot${token.trim()}/getUpdates?limit=20&timeout=0`;
     const res = await fetch(url);
     return res.json();
+  }
+
+  async function getBotUsername(token) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token.trim()}/getMe`);
+      const data = await res.json();
+      return data.ok ? data.result.username : null;
+    } catch { return null; }
   }
 
   // ─────────────────────────────────────────
@@ -159,12 +167,19 @@
 
     /** Fetch Chat ID from the most recent message to the bot */
     async fetchChatId(token) {
-      const data = await getUpdates(token);
-      if (!data.ok || !data.result || data.result.length === 0) return null;
+      const cleanToken = token.trim();
+      const data = await getUpdates(cleanToken);
+      if (!data.ok) return { error: data.description || 'Token inv\u00e1lido' };
+      if (!data.result || data.result.length === 0) {
+        // Try to get bot username to build a helpful link
+        const username = await getBotUsername(cleanToken);
+        return { notFound: true, username };
+      }
       const last = data.result[data.result.length - 1];
-      return last.message && last.message.chat && last.message.chat.id
+      const chatId = last.message && last.message.chat && last.message.chat.id
         ? String(last.message.chat.id)
         : null;
+      return { chatId };
     }
   };
 
@@ -212,17 +227,33 @@
 
     getChatBtn && getChatBtn.addEventListener('click', async () => {
       const token = tokenIn.value.trim();
-      if (!token) { chatStatus.textContent = '⚠ Ingresa el Bot Token primero.'; chatStatus.style.color = '#ef5350'; return; }
-      chatStatus.textContent = '⌛ Buscando...';
+      if (!token) { chatStatus.innerHTML = '⚠️ Ingresa el Bot Token primero.'; chatStatus.style.color = '#ef5350'; return; }
+      chatStatus.innerHTML = '⌛ Conectando con Telegram...';
       chatStatus.style.color = '#8b949e';
       try {
-        const id = await window.TelegramNotifier.fetchChatId(token);
-        if (id) {
-          chatIn.value = id;
-          chatStatus.textContent = `✅ Chat ID encontrado: ${id}`;
+        const result = await window.TelegramNotifier.fetchChatId(token);
+
+        if (result.error) {
+          chatStatus.innerHTML = `❌ Token inválido: <b>${result.error}</b>. Verifica que copiaste el token completo desde @BotFather.`;
+          chatStatus.style.color = '#ef5350';
+          return;
+        }
+
+        if (result.notFound) {
+          const link = result.username
+            ? `<br>👉 <a href="https://t.me/${result.username}" target="_blank" style="color:#229ed9;text-decoration:underline">Abre tu bot @${result.username} aquí</a>, envíale cualquier mensaje (p.ej. <b>Hola</b>), y luego vuelve a presionar este botón.`
+            : '<br>👉 Busca tu bot en Telegram, envíale cualquier mensaje (p.ej. <b>Hola</b>), y luego vuelve a presionar este botón.';
+          chatStatus.innerHTML = `⚠️ El bot aún no ha recibido mensajes.${link}`;
+          chatStatus.style.color = '#d29922';
+          return;
+        }
+
+        if (result.chatId) {
+          chatIn.value = result.chatId;
+          chatStatus.innerHTML = `✅ Chat ID encontrado: <b>${result.chatId}</b>`;
           chatStatus.style.color = '#00e676';
         } else {
-          chatStatus.textContent = '❌ No se encontró ningún mensaje. Envíale un mensaje a tu bot primero.';
+          chatStatus.innerHTML = '❌ No se pudo extraer el Chat ID. Envía otro mensaje al bot e intenta de nuevo.';
           chatStatus.style.color = '#ef5350';
         }
       } catch (e) {
