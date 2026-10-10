@@ -1454,7 +1454,7 @@
   // Bootstrap ticker on load
   initDiagnosticTicker();
 
-  setInterval(rotateTicker, 15000); // double-safety refresh
+
 
   // ===== 💰 MONEY SOUND — Web Audio API (no external files needed) =====
   function playMoneySound() {
