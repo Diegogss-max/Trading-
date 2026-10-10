@@ -574,8 +574,9 @@
     if (activeToggles.kz) {
       // ICT Killzone definitions in UTC hours
       const KZ_DEFS = [
-        { startUTC: 7,  endUTC: 10, label: 'London Open', color: 'rgba(33,150,243,0.06)',  borderColor: 'rgba(33,150,243,0.35)',  markerColor: '#2196f3' },
-        { startUTC: 12, endUTC: 15, label: 'NY Open',     color: 'rgba(255,152,0,0.06)',   borderColor: 'rgba(255,152,0,0.35)',   markerColor: '#ff9800' },
+        { startUTC: 0,  endUTC: 6,  label: 'Asian KZ',     color: 'rgba(0,188,212,0.06)',  borderColor: 'rgba(0,188,212,0.35)',  markerColor: '#00bcd4' },
+        { startUTC: 7,  endUTC: 10, label: 'London Open',  color: 'rgba(33,150,243,0.06)', borderColor: 'rgba(33,150,243,0.35)', markerColor: '#2196f3' },
+        { startUTC: 12, endUTC: 15, label: 'NY Open',      color: 'rgba(255,152,0,0.06)',  borderColor: 'rgba(255,152,0,0.35)',  markerColor: '#ff9800' },
         { startUTC: 15, endUTC: 17, label: 'London Close', color: 'rgba(171,71,188,0.06)', borderColor: 'rgba(171,71,188,0.35)', markerColor: '#ab47bc' }
       ];
 
