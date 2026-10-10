@@ -119,7 +119,32 @@
       grid: { vertLines: { color: '#1e222d' }, horzLines: { color: '#1e222d' } },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#4c525e', width: 1, style: 2 }, horzLine: { color: '#4c525e', width: 1, style: 2 } },
       rightPriceScale: { borderColor: '#2a2e39', scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false }
+      localization: {
+        timeFormatter: (time) => {
+          return new Intl.DateTimeFormat('es-CL', {
+            timeZone: 'America/Santiago',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+          }).format(new Date(time * 1000));
+        }
+      },
+      timeScale: { 
+        borderColor: '#2a2e39', 
+        timeVisible: true, 
+        secondsVisible: false,
+        tickMarkFormatter: (time, tickMarkType, locale) => {
+          const d = new Date(time * 1000);
+          if (tickMarkType === LightweightCharts.TickMarkType.Year) {
+             return new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', year: 'numeric' }).format(d);
+          } else if (tickMarkType === LightweightCharts.TickMarkType.Month) {
+             return new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', month: 'short' }).format(d);
+          } else if (tickMarkType === LightweightCharts.TickMarkType.DayOfMonth) {
+             return new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', day: 'numeric' }).format(d);
+          } else {
+             return new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit' }).format(d);
+          }
+        }
+      }
     });
     candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderUpColor: '#26a69a', borderDownColor: '#ef5350', wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
     new ResizeObserver(() => chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })).observe(container);
