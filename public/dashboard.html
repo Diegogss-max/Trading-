@@ -49,6 +49,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="btn-guide" id="tgBtn" title="Notificaciones Telegram">📨 Telegram</button>
         <button class="btn-guide" id="guideBtn">📖 Guía</button>
         <div class="timeframe-selector" id="timeframeSelector">
           <button data-tf="1m">1m</button>
@@ -351,6 +352,71 @@
     </div>
   </div>
 
+  <!-- Telegram Settings Modal -->
+  <div class="guide-overlay" id="tgOverlay">
+    <div class="guide-modal" style="max-width: 520px;">
+      <div class="guide-header">
+        <h2>📨 Notificaciones Telegram</h2>
+        <button class="guide-close" id="tgClose">✕</button>
+      </div>
+      <div class="guide-body">
+
+        <div class="guide-section" style="background:rgba(0,0,0,0.2);padding:14px;border-radius:8px;border-left:4px solid #229ed9">
+          <h3 style="color:#229ed9;margin-bottom:8px">🤖 Paso 1 — Crea tu bot</h3>
+          <ol style="margin:0;padding-left:18px;line-height:1.8">
+            <li>Abre Telegram y busca <b>@BotFather</b></li>
+            <li>Escribe <code>/newbot</code> y sígue las instrucciones</li>
+            <li>Copia el <b>Bot Token</b> que te entrega (parece: <code>123456:ABC-DEF...</code>)</li>
+          </ol>
+        </div>
+
+        <div class="guide-section" style="background:rgba(0,0,0,0.2);padding:14px;border-radius:8px;border-left:4px solid #229ed9">
+          <h3 style="color:#229ed9;margin-bottom:8px">💬 Paso 2 — Obtén tu Chat ID</h3>
+          <ol style="margin:0;padding-left:18px;line-height:1.8">
+            <li>Abre una conversación con tu bot (busca su nombre en Telegram)</li>
+            <li>Envíale cualquier mensaje (p.ej. «Hola»)</li>
+            <li>Ingresa tu Bot Token abajo y presiona <b>“Obtener Chat ID”</b></li>
+          </ol>
+        </div>
+
+        <div class="guide-section">
+          <label style="display:block;margin-bottom:6px;font-size:13px;color:rgba(255,255,255,0.7)">Bot Token</label>
+          <input id="tgTokenInput" type="text" placeholder="123456789:ABCdef..." style="width:100%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:13px;box-sizing:border-box;">
+        </div>
+
+        <div class="guide-section">
+          <label style="display:block;margin-bottom:6px;font-size:13px;color:rgba(255,255,255,0.7)">Chat ID</label>
+          <div style="display:flex;gap:8px">
+            <input id="tgChatIdInput" type="text" placeholder="p.ej. 123456789" style="flex:1;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:13px;">
+            <button id="tgGetChatId" style="padding:10px 14px;background:#1d4ed8;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;white-space:nowrap;">Obtener Chat ID</button>
+          </div>
+          <div id="tgChatIdStatus" style="margin-top:6px;font-size:12px;color:#8b949e;"></div>
+        </div>
+
+        <div class="guide-section">
+          <label style="display:block;margin-bottom:8px;font-size:13px;color:rgba(255,255,255,0.7)">🔔 Notificar cuando...</label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+            <input type="checkbox" id="tgNotifyHigh" checked style="width:16px;height:16px;accent-color:#00e676;"> <span>Señal LONG con confianza HIGH</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+            <input type="checkbox" id="tgNotifyMedium" checked style="width:16px;height:16px;accent-color:#d29922;"> <span>Señal LONG con confianza MEDIUM</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="tgNotifyMacro" checked style="width:16px;height:16px;accent-color:#ef5350;"> <span>Alertas de Riesgo Macro</span>
+          </label>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:4px">
+          <button id="tgSaveBtn" style="flex:1;padding:12px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✅ Guardar y Activar</button>
+          <button id="tgTestBtn" style="padding:12px 16px;background:#1d4ed8;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer;">🧪 Probar</button>
+        </div>
+        <div id="tgSaveStatus" style="margin-top:10px;font-size:13px;text-align:center;"></div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/telegram.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

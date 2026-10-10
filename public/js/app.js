@@ -482,6 +482,9 @@
       renderTracker();
       // 💰 Money sound alert on new entry signal
       playMoneySound();
+      // 📨 Telegram notification
+      const currentBtcPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
+      if (window.TelegramNotifier) window.TelegramNotifier.notifySignals(refinedSignals, currentBtcPrice);
     }
 
     drawAnalysis(structure, obs, fvgs, liquidity, pd, refinedSignals);
